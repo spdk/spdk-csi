@@ -1,0 +1,6 @@
+/_out
+/vendor
+
+*.orig
+*.patch
+*.rej
