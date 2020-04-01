@@ -44,6 +44,9 @@ Lint yaml files if yamllint is installed. Requires yamllint 1.10+.
 - `$ make test`
 Verify go modules and run unit tests.
 
+- `$ make image`
+Build SPDK-CSI docker image.
+
 ### Parameters
 
 `spdkcsi` executable accepts several command line parameters.

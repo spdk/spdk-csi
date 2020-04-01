@@ -26,6 +26,14 @@ SCRIPT_DIRS := scripts
 ifeq ($(origin GOARCH), undefined)
   GOARCH := $(shell go env GOARCH)
 endif
+# csi image info (spdkcsi/spdkcsi:canary)
+ifeq ($(origin CSI_IMAGE_REGISTRY), undefined)
+  CSI_IMAGE_REGISTRY := spdkcsi
+endif
+ifeq ($(origin CSI_IMAGE_TAG), undefined)
+  CSI_IMAGE_TAG := canary
+endif
+CSI_IMAGE := $(CSI_IMAGE_REGISTRY)/spdkcsi:$(CSI_IMAGE_TAG)
 
 # default target
 all: spdkcsi lint test
@@ -79,6 +87,11 @@ mod-check:
 unit-test:
 	@echo === running unit test
 	@go test -cover $(foreach d,$(SOURCE_DIRS),./$(d)/...)
+
+# docker image
+image: spdkcsi
+	@echo === running docker build
+	docker build -t $(CSI_IMAGE) -f deploy/image/Dockerfile $(OUT_DIR)
 
 .PHONY: clean
 clean:
