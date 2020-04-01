@@ -1,0 +1,71 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: spdkcsi-node
+spec:
+  selector:
+    matchLabels:
+      app: spdkcsi-node
+  template:
+    metadata:
+      labels:
+        app: spdkcsi-node
+    spec:
+      serviceAccount: spdkcsi-node-sa
+      hostNetwork: true
+      containers:
+      - name: spdkcsi-registrar
+        securityContext:
+          privileged: true
+        image: quay.io/k8scsi/csi-node-driver-registrar:v1.2.0
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi.sock"
+        - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.spdk.io/csi.sock"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: registration-dir
+          mountPath: /registration
+      - name: spdkcsi-node
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["SYS_ADMIN"]
+          allowPrivilegeEscalation: true
+        image: spdkcsi/spdkcsi:canary
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--endpoint=unix:///csi/csi.sock"
+        - "--nodeid=$(NODE_ID)"
+        - "--node"
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: host-dev
+          mountPath: /dev
+        - name: host-sys
+          mountPath: /sys
+      volumes:
+      - name: socket-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins/csi.spdk.io
+          type: DirectoryOrCreate
+      - name: registration-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry/
+          type: Directory
+      - name: host-dev
+        hostPath:
+          path: /dev
+      - name: host-sys
+        hostPath:
+          path: /sys

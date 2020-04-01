@@ -20,7 +20,7 @@ Status: **Pre-alpha**
 
 ## Prerequisites
 
-SPDK-CSI is currently developed and tested with `Go 1.14`, `Docker 19.03` and `Kubernetes 1.17`.
+SPDK-CSI is currently developed and tested with `Go 1.14`, `Docker 19.03` and `Kubernetes 1.17` on `Ubuntu 18.04`.
 
 Minimal requirement: Go 1.12+(supports Go module), Docker 18.03+ and Kubernetes 1.13+(supports CSI spec 1.0).
 
@@ -61,7 +61,79 @@ Build SPDK-CSI docker image.
 
 ## Usage
 
-TODO
+Example deployment files can be found in deploy/kubernetes directory.
+
+| File Name            | Usage                                      |
+| -------------------- | -----                                      |
+| storageclass.yaml    | StorageClass of provisioner "csi.spdk.io"  |
+| controller.yaml      | StatefulSet running CSI Controller service |
+| node.yaml            | DaemonSet running CSI Node service         |
+| controller-rbac.yaml | Access control for CSI Controller service  |
+| node-rbac.yaml       | Access control for CSI Node service        |
+| config-map.yaml      | SPDK storage cluster configurations        |
+| secret.yaml          | SPDK storage cluster access tokens         |
+
+#### Deploy
+
+1. Launch Minikube test cluster
+  ```bash
+  $ cd scripts
+  $ sudo ./minikube.sh up
+
+  # Create kubectl shortcut (assume kubectl version 1.17.0)
+  $ sudo ln -s /var/lib/minikube/binaries/v1.17.0/kubectl /usr/local/bin/kubectl
+
+  # Wait for Kubernetes ready
+  $ kubectl get pods --all-namespaces
+  NAMESPACE     NAME                          READY   STATUS    RESTARTS   AGE
+  kube-system   coredns-6955765f44-dlb88      1/1     Running   0          81s
+  ......                                              ......
+  kube-system   kube-apiserver-spdkcsi-dev    1/1     Running   0          67s
+  ......                                              ......
+  ```
+
+2. Deploy SPDK-CSI services
+  ```bash
+  $ cd deploy/kubernetes
+  $ ./deploy.sh
+
+  # Check status
+  $ kubectl get pods
+  NAME                   READY   STATUS    RESTARTS   AGE
+  spdkcsi-controller-0   3/3     Running   0          3m16s
+  spdkcsi-node-lzvg5     2/2     Running   0          3m16s
+  ```
+
+3. Deploy test pod
+  ```bash
+  $ cd deploy/kubernetes
+  $ kubectl apply -f testpod.yaml
+
+  # Check status
+  $ kubectl get pods
+  NAME                   READY   STATUS    RESTARTS   AGE
+  spdkcsi-test           1/1     Running   0          1m31s
+  ```
+
+### Teardown
+
+1. Delete test pod
+  ```bash
+  $ cd deploy/kubernetes
+  $ kubectl delete -f testpod.yaml
+  ```
+
+2. Delete SPDK-CSI services
+  ```bash
+  $ cd deploy/kubernetes
+  $ ./deploy.sh teardown
+  ```
+
+3. Teardown Kubernetes test cluster
+  ```bash
+  $ cd scripts
+  $ sudo ./minikube.sh clean
+  ```
 
 ## Communication and Contribution
 

@@ -1,0 +1,73 @@
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: spdkcsi-controller
+spec:
+  serviceName: spdkcsi-controller
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spdkcsi-controller
+  template:
+    metadata:
+      labels:
+        app: spdkcsi-controller
+    spec:
+      serviceAccount: spdkcsi-controller-sa
+      hostNetwork: true
+      containers:
+      - name: spdkcsi-provisioner
+        image: quay.io/k8scsi/csi-provisioner:v1.4.0
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi-provisioner.sock"
+        - "--timeout=30s"
+        - "--retry-interval-start=500ms"
+        - "--enable-leader-election=false"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+      - name: spdkcsi-attacher
+        image: quay.io/k8scsi/csi-attacher:v2.1.1
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi-provisioner.sock"
+        - "--leader-election=false"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+      - name: spdkcsi-controller
+        image: spdkcsi/spdkcsi:canary
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--endpoint=unix:///csi/csi-provisioner.sock"
+        - "--nodeid=$(NODE_ID)"
+        - "--controller"
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: spdkcsi-config
+          mountPath: /etc/spdkcsi-config/
+          readOnly: true
+        - name: spdkcsi-secret
+          mountPath: /etc/spdkcsi-secret/
+          readOnly: true
+      volumes:
+      - name: socket-dir
+        emptyDir:
+          medium: "Memory"
+      - name: spdkcsi-config
+        configMap:
+          name: spdkcsi-cm
+      - name: spdkcsi-secret
+        secret:
+          secretName: spdkcsi-secret
