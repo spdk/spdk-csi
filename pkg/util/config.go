@@ -16,6 +16,16 @@ limitations under the License.
 
 package util
 
+const (
+	// TODO: move hardcoded settings to config map
+	cfgRPCTimeoutSeconds = 20
+	cfgLvolClearMethod   = "unmap" // none, unmap, write_zeroes
+	cfgLvolThinProvision = true
+	cfgNVMfSvcPort       = "4420"
+	cfgAllowAnyHost      = true
+	cfgAddrFamily        = "IPv4" // IPv4, IPv6, IB, FC
+)
+
 // Config stores parsed command line parameters
 type Config struct {
 	DriverName    string
