@@ -42,7 +42,7 @@ Install [golangci-lint](https://github.com/golangci/golangci-lint) and perform v
 Lint yaml files if yamllint is installed. Requires yamllint 1.10+.
 
 - `$ make test`
-Verify go modules and run unit tests.
+Verify go modules and run unit tests. Requires SPDK target and JsonRPC HTTP proxy running on localhost. See deploy/spdk/README for details.
 
 - `$ make image`
 Build SPDK-CSI docker image.
