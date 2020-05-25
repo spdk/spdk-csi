@@ -17,16 +17,48 @@ limitations under the License.
 package spdk
 
 import (
-	"time"
-
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"k8s.io/klog"
 
+	csicommon "github.com/spdk/spdk-csi/pkg/csi-common"
 	"github.com/spdk/spdk-csi/pkg/util"
 )
 
 func Run(conf *util.Config) {
-	klog.Infof("dummy driver started: %s", conf.DriverName)
-	for {
-		time.Sleep(time.Hour)
+	var (
+		cd  *csicommon.CSIDriver
+		ids *identityServer
+		cs  *controllerServer
+		ns  *nodeServer
+
+		controllerCaps = []csi.ControllerServiceCapability_RPC_Type{
+			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		}
+		volumeModes = []csi.VolumeCapability_AccessMode_Mode{
+			csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		}
+	)
+
+	cd = csicommon.NewCSIDriver(conf.DriverName, conf.DriverVersion, conf.NodeID)
+	if cd == nil {
+		klog.Fatalln("Failed to initialize CSI Driver.")
 	}
+	if conf.IsControllerServer {
+		cd.AddControllerServiceCapabilities(controllerCaps)
+		cd.AddVolumeCapabilityAccessModes(volumeModes)
+	}
+
+	ids = newIdentityServer(cd)
+
+	if conf.IsNodeServer {
+		ns = newNodeServer(cd)
+	}
+
+	if conf.IsControllerServer {
+		cs = newControllerServer(cd)
+	}
+
+	s := csicommon.NewNonBlockingGRPCServer()
+	s.Start(conf.Endpoint, ids, cs, ns)
+	s.Wait()
 }
