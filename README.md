@@ -29,10 +29,15 @@ Minimal requirement: Go 1.12+(supports Go module), Docker 18.03+ and Kubernetes 
 ### Build
 
 - `$ make all`
-Build targets spdkcsi, test.
+Build targets spdkcsi, lint, test.
 
 - `$ make spdkcsi`
 Build SPDK-CSI binary `_out/spdkcsi`.
+
+- `$ make lint`
+Lint code and scripts.
+  - `$ make golangci`
+Install [golangci-lint](https://github.com/golangci/golangci-lint) and perform various go code static checks.
 
 - `$ make test`
 Verify go modules and run unit tests.
