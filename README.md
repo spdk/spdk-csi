@@ -38,6 +38,8 @@ Build SPDK-CSI binary `_out/spdkcsi`.
 Lint code and scripts.
   - `$ make golangci`
 Install [golangci-lint](https://github.com/golangci/golangci-lint) and perform various go code static checks.
+  - `$ make yamllint`
+Lint yaml files if yamllint is installed. Requires yamllint 1.10+.
 
 - `$ make test`
 Verify go modules and run unit tests.

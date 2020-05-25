@@ -36,8 +36,8 @@ spdkcsi:
 	@echo === building spdkcsi binary
 	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -o $(OUT_DIR)/spdkcsi ./cmd/
 
-# static code check
-lint: golangci
+# static code check, text lint
+lint: golangci yamllint
 
 .PHONY: golangci
 golangci: $(GOLANGCI_BIN)
@@ -47,6 +47,15 @@ golangci: $(GOLANGCI_BIN)
 $(GOLANGCI_BIN):
 	@echo === installing golangci-lint
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | bash -s -- -b $(TOOL_DIR) $(GOLANGCI_VERSION)
+
+.PHONY: yamllint
+yamllint:
+	@echo === running yamllint
+	@if hash yamllint 2> /dev/null; then                     \
+	     yamllint -s -c scripts/yamllint.yml $(SCRIPT_DIRS); \
+	 else                                                    \
+	     echo yamllint not installed, skip test;             \
+	 fi
 
 # tests
 test: mod-check unit-test
