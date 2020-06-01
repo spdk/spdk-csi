@@ -37,7 +37,7 @@ spdkcsi:
 	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -o $(OUT_DIR)/spdkcsi ./cmd/
 
 # static code check, text lint
-lint: golangci yamllint
+lint: golangci yamllint shellcheck
 
 .PHONY: golangci
 golangci: $(GOLANGCI_BIN)
@@ -55,6 +55,16 @@ yamllint:
 	     yamllint -s -c scripts/yamllint.yml $(SCRIPT_DIRS); \
 	 else                                                    \
 	     echo yamllint not installed, skip test;             \
+	 fi
+
+.PHONY: shellcheck
+shellcheck:
+	@echo === running shellcheck
+	@find $(SCRIPT_DIRS) -name "*.sh" -type f | xargs bash -n
+	@if hash shellcheck 2> /dev/null; then                            \
+	     find $(SCRIPT_DIRS) -name "*.sh" -type f | xargs shellcheck; \
+	 else                                                             \
+	     echo shellcheck not installed, skip test;                    \
 	 fi
 
 # tests
