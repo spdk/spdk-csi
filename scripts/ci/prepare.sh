@@ -21,6 +21,16 @@ function check_os() {
         echo "upgrade kernel to 5.0+ and install linux-modules-extra package"
         exit 1
     fi
+    # check iscsi_tcp kernel module
+    if ! modprobe -n iscsi_tcp; then
+        echo "failed to load iscsi_tcp kernel module"
+        exit 1
+    fi
+    # check if open-iscsi is installed on host
+    if dpkg -l open-iscsi > /dev/null 2>&1; then
+        echo "please remove open-iscsi package on the host"
+        exit 1
+    fi
 }
 
 function install_packages() {

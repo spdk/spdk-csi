@@ -125,7 +125,7 @@ func NewSpdkNode(rpcURL, rpcUser, rpcPass, targetType, targetAddr string) (SpdkN
 	case "nvme-tcp":
 		return newNVMf(&client, "TCP", targetAddr), nil
 	case "iscsi":
-		return nil, fmt.Errorf("iSCSI transport not supported yet")
+		return newISCSI(&client, targetAddr), nil
 	default:
 		return nil, fmt.Errorf("unknown transport: %s", targetType)
 	}
