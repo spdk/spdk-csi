@@ -50,6 +50,12 @@ spec:
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
+        - name: plugin-dir
+          mountPath: /var/lib/kubelet/plugins
+          mountPropagation: "Bidirectional"
+        - name: pod-dir
+          mountPath: /var/lib/kubelet/pods
+          mountPropagation: "Bidirectional"
         - name: host-dev
           mountPath: /dev
         - name: host-sys
@@ -62,6 +68,14 @@ spec:
       - name: registration-dir
         hostPath:
           path: /var/lib/kubelet/plugins_registry/
+          type: Directory
+      - name: plugin-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: Directory
+      - name: pod-dir
+        hostPath:
+          path: /var/lib/kubelet/pods
           type: Directory
       - name: host-dev
         hostPath:
