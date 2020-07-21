@@ -2,7 +2,7 @@
 
 ## About
 
-This repo contains SPDK CSI ([Container Storage Interface]((https://github.com/container-storage-interface/)) plugin for Kubernetes.
+This repo contains SPDK CSI ([Container Storage Interface](https://github.com/container-storage-interface/)) plugin for Kubernetes.
 
 SPDK CSI plugin brings SPDK to Kubernetes. It provisions SPDK logical volumes on storage node dynamically and enables Pods to access SPDK storage backend through NVMe-oF or iSCSI.
 
@@ -16,7 +16,7 @@ This plugin supports `x86_64` and `Arm64` architectures.
 
 ## Project status
 
-Status: **Pre-alpha**
+Status: **Alpha**
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ Install [golangci-lint](https://github.com/golangci/golangci-lint) and perform v
 Lint yaml files if yamllint is installed. Requires yamllint 1.10+.
 
 - `$ make test`
-Verify go modules and run unit tests. Requires SPDK target and JsonRPC HTTP proxy running on localhost. See deploy/spdk/README for details.
+Verify go modules and run unit tests. Requires SPDK target and JsonRPC HTTP proxy running on localhost. See [deploy/spdk/README](deploy/spdk/README.md) for details.
 
 - `$ make image`
 Build SPDK-CSI docker image.
@@ -73,7 +73,18 @@ Example deployment files can be found in deploy/kubernetes directory.
 | config-map.yaml      | SPDK storage cluster configurations        |
 | secret.yaml          | SPDK storage cluster access tokens         |
 
-#### Deploy
+---
+**_NOTE:_**
+
+Below example is a simplest test system running in a single host or VM. No NVMe device is required, memory based bdev is used instead.
+
+---
+
+### Prepare SPDK storage node
+
+Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage service on localhost.
+
+### Deploy SPDKCSI services
 
 1. Launch Minikube test cluster
   ```bash
@@ -110,9 +121,21 @@ Example deployment files can be found in deploy/kubernetes directory.
   $ kubectl apply -f testpod.yaml
 
   # Check status
+  $ kubectl get pv
+  NAME                       CAPACITY   ...    STORAGECLASS   REASON   AGE
+  persistentvolume/pvc-...   256Mi      ...    spdkcsi-sc              43s
+
+  $ kubectl get pvc
+  NAME                                ...   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+  persistentvolumeclaim/spdkcsi-pvc   ...   256Mi      RWO            spdkcsi-sc     44s
+
   $ kubectl get pods
   NAME                   READY   STATUS    RESTARTS   AGE
   spdkcsi-test           1/1     Running   0          1m31s
+
+  # Check attached spdk volume in test pod
+  $ kubectl exec spdkcsi-test mount | grep spdkcsi
+  /dev/disk/by-id/nvme-..._spdkcsi-sn on /spdkvol type ext4 (rw,relatime)
   ```
 
 ### Teardown
