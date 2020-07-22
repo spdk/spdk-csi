@@ -69,10 +69,10 @@ yamllint:
 shellcheck:
 	@echo === running shellcheck
 	@find $(SCRIPT_DIRS) -name "*.sh" -type f | xargs bash -n
-	@if hash shellcheck 2> /dev/null; then                            \
-	     find $(SCRIPT_DIRS) -name "*.sh" -type f | xargs shellcheck; \
-	 else                                                             \
-	     echo shellcheck not installed, skip test;                    \
+	@if hash shellcheck 2> /dev/null; then                               \
+	     find $(SCRIPT_DIRS) -name "*.sh" -type f | xargs shellcheck -x; \
+	 else                                                                \
+	     echo shellcheck not installed, skip test;                       \
 	 fi
 
 # tests

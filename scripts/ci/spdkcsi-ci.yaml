@@ -1,0 +1,51 @@
+---
+# spdkcsi ci jenkins job
+- job:
+    name: spdkcsi-ci
+    description: CI for SPDK-CSI project
+    node: master
+    project-type: matrix
+    concurrent: false
+    disabled: false
+    axes:
+    - axis:
+        name: nodes
+        type: slave
+        values:
+        - spdkcsi-ci-x86
+        - spdkcsi-ci-arm
+    builders:
+    - shell: |-
+        #!/bin/bash -e
+        git fetch origin ${GERRIT_REFSPEC}
+        git checkout FETCH_HEAD
+        scripts/ci/test.sh
+    scm:
+    - git:
+        branches:
+        - '*/master'
+        url: 'https://review.spdk.io/gerrit/spdk/spdk-csi'
+        wipe-workspace: true
+    triggers:
+    - gerrit:
+        # server-name configured in "gerrit trigger" plugin
+        server-name: spdkcsi-gerrit
+        projects:
+        - branches:
+          - branch-compare-type: ANT
+            branch-pattern: '**'
+          project-compare-type: ANT
+          project-pattern: spdk/spdk-csi
+        trigger-on:
+        - patchset-created-event:
+            exclude-trivial-rebase: false
+            exclude-no-code-change: false
+        - draft-published-event
+        - comment-added-contains-event:
+            # yamllint disable-line rule:line-length
+            comment-contains-value: '(?i)^(Patch Set [0-9]+:)?( [\w\\+-]*)*(\n\n)?\s*(retrigger)'
+    wrappers:
+    - workspace-cleanup
+    - timeout:
+        timeout: 30
+        abort: true

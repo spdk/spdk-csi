@@ -1,0 +1,9 @@
+GOVERSION=1.14
+SPDKIMAGE=spdkdev:latest
+JSONRPC_IP=127.0.0.1
+JSONRPC_PORT=9009
+JSONRPC_USER=spdkcsiuser
+JSONRPC_PASS=spdkcsipass
+
+# source code root directory
+ROOTDIR="${DIR}/../.."
