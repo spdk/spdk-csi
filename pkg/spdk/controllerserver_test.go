@@ -15,8 +15,32 @@ import (
 	"github.com/spdk/spdk-csi/pkg/util"
 )
 
-func TestVolume(t *testing.T) {
-	cs, lvss, err := createTestController()
+func TestNvmeofVolume(t *testing.T) {
+	testVolume("nvme-tcp", t)
+}
+
+func TestNvmeofIdempotency(t *testing.T) {
+	testIdempotency("nvme-tcp", t)
+}
+
+func TestNvmeofConcurrency(t *testing.T) {
+	testConcurrency("nvme-tcp", t)
+}
+
+func TestIscsiVolume(t *testing.T) {
+	testVolume("iscsi", t)
+}
+
+func TestIscsiIdempotency(t *testing.T) {
+	testIdempotency("iscsi", t)
+}
+
+func TestIscsiConcurrency(t *testing.T) {
+	testConcurrency("iscsi", t)
+}
+
+func testVolume(targetType string, t *testing.T) {
+	cs, lvss, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +81,8 @@ func TestVolume(t *testing.T) {
 	}
 }
 
-func TestIdempotency(t *testing.T) {
-	cs, lvss, err := createTestController()
+func testIdempotency(targetType string, t *testing.T) {
+	cs, lvss, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +105,8 @@ func TestIdempotency(t *testing.T) {
 	}
 }
 
-func TestConcurrency(t *testing.T) {
-	cs, lvss, err := createTestController()
+func testConcurrency(targetType string, t *testing.T) {
+	cs, lvss, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +148,8 @@ func TestConcurrency(t *testing.T) {
 	}
 }
 
-func createTestController() (cs *controllerServer, lvss [][]util.LvStore, err error) {
-	err = createConfigFiles()
+func createTestController(targetType string) (cs *controllerServer, lvss [][]util.LvStore, err error) {
+	err = createConfigFiles(targetType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -148,13 +172,16 @@ func createTestController() (cs *controllerServer, lvss [][]util.LvStore, err er
 	return cs, lvss, nil
 }
 
-func createConfigFiles() error {
+func createConfigFiles(targetType string) error {
 	configFile, err := ioutil.TempFile("", "spdkcsi-config*.json")
 	if err != nil {
 		return err
 	}
 	defer configFile.Close()
-	config := `
+	var config string
+	switch targetType {
+	case "nvme-tcp":
+		config = `
     {
       "nodes": [
         {
@@ -164,7 +191,20 @@ func createConfigFiles() error {
           "targetAddr": "127.0.0.1"
         }
       ]
+	}`
+	case "iscsi":
+		config = `
+    {
+      "nodes": [
+        {
+          "name": "localhost",
+          "rpcURL": "http://127.0.0.1:9009",
+          "targetType": "iscsi",
+          "targetAddr": "127.0.0.1"
+        }
+      ]
     }`
+	}
 	_, err = configFile.Write([]byte(config))
 	if err != nil {
 		os.Remove(configFile.Name())
