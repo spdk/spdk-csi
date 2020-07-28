@@ -88,6 +88,12 @@ unit-test:
 	@echo === running unit test
 	@go test -cover $(foreach d,$(SOURCE_DIRS),./$(d)/...)
 
+# e2e test
+.PHONY: e2e-test
+e2e-test:
+	@echo === running e2e test
+	@go test ./e2e
+
 # docker image
 image: spdkcsi
 	@echo === running docker build
