@@ -78,6 +78,7 @@ func (node *nodeISCSI) VolumeInfo(lvolID string) (map[string]string, error) {
 		"targetAddr": node.targetAddr,
 		"targetPort": node.targetPort,
 		"iqn":        iqnPrefixName + lvolID,
+		"targetType": "iscsi",
 	}, nil
 }
 

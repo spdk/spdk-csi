@@ -47,6 +47,11 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c",
+                        "/usr/sbin/iscsid || echo failed to start iscsid"]
         volumeMounts:
         - name: socket-dir
           mountPath: /csi

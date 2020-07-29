@@ -53,7 +53,11 @@ func NewSpdkCsiInitiator(volumeContext map[string]string) (SpdkCsiInitiator, err
 			model:      volumeContext["model"],
 		}, nil
 	case "iscsi":
-		return nil, fmt.Errorf("iSCSI initiator not supported yet")
+		return &initiatorISCSI{
+			targetAddr: volumeContext["targetAddr"],
+			targetPort: volumeContext["targetPort"],
+			iqn:        volumeContext["iqn"],
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown initiator: %s", targetType)
 	}
@@ -96,6 +100,48 @@ func (nvmf *initiatorNVMf) Disconnect() error {
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
+	return waitForDeviceGone(deviceGlob, 20)
+}
+
+type initiatorISCSI struct {
+	targetAddr string
+	targetPort string
+	iqn        string
+}
+
+func (iscsi *initiatorISCSI) Connect() (string, error) {
+	// iscsiadm -m discovery -t sendtargets -p ip:port
+	target := iscsi.targetAddr + ":" + iscsi.targetPort
+	cmdLine := []string{"iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", target}
+	err := execWithTimeout(cmdLine, 40)
+	if err != nil {
+		klog.Errorf("command %v failed: %s", cmdLine, err)
+	}
+	// iscsiadm -m node -T "iqn" -p ip:port --login
+	cmdLine = []string{"iscsiadm", "-m", "node", "-T", iscsi.iqn, "-p", target, "--login"}
+	err = execWithTimeout(cmdLine, 40)
+	if err != nil {
+		klog.Errorf("command %v failed: %s", cmdLine, err)
+	}
+
+	deviceGlob := fmt.Sprintf("/dev/disk/by-path/*%s*", iscsi.iqn)
+	devicePath, err := waitForDeviceReady(deviceGlob, 20)
+	if err != nil {
+		return "", err
+	}
+	return devicePath, nil
+}
+
+func (iscsi *initiatorISCSI) Disconnect() error {
+	target := iscsi.targetAddr + ":" + iscsi.targetPort
+	// iscsiadm -m node -T "iqn" -p ip:port --logout
+	cmdLine := []string{"iscsiadm", "-m", "node", "-T", iscsi.iqn, "-p", target, "--logout"}
+	err := execWithTimeout(cmdLine, 40)
+	if err != nil {
+		klog.Errorf("command %v failed: %s", cmdLine, err)
+	}
+
+	deviceGlob := fmt.Sprintf("/dev/disk/by-path/*%s*", iscsi.iqn)
 	return waitForDeviceGone(deviceGlob, 20)
 }
 
