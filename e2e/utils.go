@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/onsi/ginkgo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -17,7 +16,6 @@ const (
 
 	// deployment yaml files
 	yamlDir            = "../deploy/kubernetes-1.17/"
-	configMapPath      = yamlDir + "config-map.yaml"
 	secretPath         = yamlDir + "secret.yaml"
 	controllerRbacPath = yamlDir + "controller-rbac.yaml"
 	nodeRbacPath       = yamlDir + "node-rbac.yaml"
@@ -32,8 +30,9 @@ const (
 	testPodName       = "spdkcsi-test"
 )
 
-func deployConfigs() {
-	_, err := framework.RunKubectl("-n", nameSpace, "apply", "-f", configMapPath)
+func deployConfigs(configMapData string) {
+	configMapData = "--from-literal=config.json=" + configMapData
+	_, err := framework.RunKubectl("-n", nameSpace, "create", "configmap", "spdkcsi-cm", configMapData)
 	if err != nil {
 		e2elog.Logf("failed to create config map %s", err)
 	}
@@ -44,7 +43,7 @@ func deployConfigs() {
 }
 
 func deleteConfigs() {
-	_, err := framework.RunKubectl("-n", nameSpace, "delete", "-f", configMapPath)
+	_, err := framework.RunKubectl("-n", nameSpace, "delete", "configmap", "spdkcsi-cm")
 	if err != nil {
 		e2elog.Logf("failed to delete config map: %s", err)
 	}
@@ -164,43 +163,3 @@ func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 	}
 	return nil
 }
-
-var _ = ginkgo.Describe("SPDKCSI", func() {
-	f := framework.NewDefaultFramework("spdkcsi")
-	ginkgo.BeforeEach(func() {
-		deployConfigs()
-		deployCsi()
-	})
-
-	ginkgo.AfterEach(func() {
-		deleteCsi()
-		deleteConfigs()
-	})
-
-	ginkgo.Context("Test SPDK CSI", func() {
-		ginkgo.It("Test SPDK CSI", func() {
-			ginkgo.By("checking controller statefulset is running", func() {
-				err := waitForControllerReady(f.ClientSet, 4*time.Minute)
-				if err != nil {
-					ginkgo.Fail(err.Error())
-				}
-			})
-
-			ginkgo.By("checking node daemonset is running", func() {
-				err := waitForNodeServerReady(f.ClientSet, 2*time.Minute)
-				if err != nil {
-					ginkgo.Fail(err.Error())
-				}
-			})
-
-			ginkgo.By("checking test pod is running", func() {
-				deployTestPod()
-				defer deleteTestPod()
-				err := waitForTestPodReady(f.ClientSet, 5*time.Minute)
-				if err != nil {
-					ginkgo.Fail(err.Error())
-				}
-			})
-		})
-	})
-})
