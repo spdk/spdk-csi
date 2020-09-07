@@ -16,7 +16,7 @@ This plugin supports `x86_64` and `Arm64` architectures.
 
 ## Project status
 
-Status: **Alpha**
+Status: **Beta**
 
 ## Prerequisites
 
@@ -77,6 +77,7 @@ Example deployment files can be found in deploy/kubernetes directory.
 **_NOTE:_**
 
 Below example is a simplest test system running in a single host or VM. No NVMe device is required, memory based bdev is used instead.
+[docs/multi-node.md](docs/multi-node.md) introduces how to deploy SPDKCSI on multiple nodes with NVMe devices.
 
 ---
 
