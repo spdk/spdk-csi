@@ -48,10 +48,27 @@ var _ = ginkgo.Describe("SPDKCSI-ISCSI", func() {
 				}
 			})
 
-			ginkgo.By("checking test pod is running", func() {
+			ginkgo.By("create a PVC and bind it to an pod", func() {
+				deployPVC()
 				deployTestPod()
-				defer deleteTestPod()
+				defer deletePVCAndTestPod()
 				err := waitForTestPodReady(f.ClientSet, 5*time.Minute)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+			})
+
+			ginkgo.By("check data persistency after the pod is removed and recreated", func() {
+				deployPVC()
+				deployTestPod()
+				defer deletePVCAndTestPod()
+
+				err := waitForTestPodReady(f.ClientSet, 3*time.Minute)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+
+				err = checkDataPersist(f)
 				if err != nil {
 					ginkgo.Fail(err.Error())
 				}

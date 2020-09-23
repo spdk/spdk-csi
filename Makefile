@@ -21,7 +21,7 @@ GOLANGCI_VERSION := v1.23.8
 GOLANGCI_BIN := $(TOOL_DIR)/golangci-lint
 # go source, scripts
 SOURCE_DIRS := cmd pkg
-SCRIPT_DIRS := scripts deploy
+SCRIPT_DIRS := scripts deploy e2e
 # goarch for cross building
 ifeq ($(origin GOARCH), undefined)
   GOARCH := $(shell go env GOARCH)
@@ -92,7 +92,7 @@ unit-test:
 .PHONY: e2e-test
 e2e-test:
 	@echo === running e2e test
-	@go test ./e2e
+	@go test -timeout 30m ./e2e
 
 # docker image
 image: spdkcsi

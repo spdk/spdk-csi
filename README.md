@@ -44,6 +44,9 @@ Lint yaml files if yamllint is installed. Requires yamllint 1.10+.
 - `$ make test`
 Verify go modules and run unit tests. Requires SPDK target and JsonRPC HTTP proxy running on localhost. See [deploy/spdk/README](deploy/spdk/README.md) for details.
 
+- `$ make e2e-test`
+Verify core features through Kubernetes end-to-end (e2e) test.
+
 - `$ make image`
 Build SPDK-CSI docker image.
 

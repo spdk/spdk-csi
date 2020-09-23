@@ -2,8 +2,10 @@ package e2e
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
+	. "github.com/onsi/gomega" // nolint
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -22,7 +24,8 @@ const (
 	controllerPath     = yamlDir + "controller.yaml"
 	nodePath           = yamlDir + "node.yaml"
 	storageClassPath   = yamlDir + "storageclass.yaml"
-	testPodPath        = yamlDir + "testpod.yaml"
+	pvcPath            = "pvc.yaml"
+	testPodPath        = "testpod.yaml"
 
 	// controller statefulset and node daemonset names
 	controllerStsName = "spdkcsi-controller"
@@ -113,6 +116,25 @@ func deleteTestPod() {
 	}
 }
 
+func deployPVC() {
+	_, err := framework.RunKubectl("-n", nameSpace, "apply", "-f", pvcPath)
+	if err != nil {
+		e2elog.Logf("failed to delete test pod: %s", err)
+	}
+}
+
+func deletePVC() {
+	_, err := framework.RunKubectl("-n", nameSpace, "delete", "-f", pvcPath)
+	if err != nil {
+		e2elog.Logf("failed to delete test pod: %s", err)
+	}
+}
+
+func deletePVCAndTestPod() {
+	deleteTestPod()
+	deletePVC()
+}
+
 func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error {
 	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
 		sts, err := c.AppsV1().StatefulSets(nameSpace).Get(controllerStsName, metav1.GetOptions{})
@@ -162,4 +184,59 @@ func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 		return fmt.Errorf("failed to wait for test pod ready: %s", err)
 	}
 	return nil
+}
+
+func execCommandInPod(f *framework.Framework, c, ns string, opt *metav1.ListOptions) (stdOut, stdErr string) {
+	podPot := getCommandInPodOpts(f, c, ns, opt)
+	stdOut, stdErr, err := f.ExecWithOptions(podPot)
+	if stdErr != "" {
+		e2elog.Logf("stdErr occurred: %v", stdErr)
+	}
+	Expect(err).Should(BeNil())
+	return stdOut, stdErr
+}
+
+func getCommandInPodOpts(f *framework.Framework, c, ns string, opt *metav1.ListOptions) framework.ExecOptions {
+	cmd := []string{"/bin/sh", "-c", c}
+	podList, err := f.PodClientNS(ns).List(*opt)
+	framework.ExpectNoError(err)
+	Expect(podList.Items).NotTo(BeNil())
+	Expect(err).Should(BeNil())
+
+	return framework.ExecOptions{
+		Command:            cmd,
+		PodName:            podList.Items[0].Name,
+		Namespace:          ns,
+		ContainerName:      podList.Items[0].Spec.Containers[0].Name,
+		Stdin:              nil,
+		CaptureStdout:      true,
+		CaptureStderr:      true,
+		PreserveWhitespace: true,
+	}
+}
+
+func checkDataPersist(f *framework.Framework) error {
+	data := "Data that needs to be stored"
+	// write data to PVC
+	dataPath := "/spdkvol/test"
+	opt := metav1.ListOptions{
+		LabelSelector: "app=spdkcsi-pvc",
+	}
+	execCommandInPod(f, fmt.Sprintf("echo %s > %s", data, dataPath), nameSpace, &opt)
+
+	deleteTestPod()
+	deployTestPod()
+	err := waitForTestPodReady(f.ClientSet, 5*time.Minute)
+	if err != nil {
+		return err
+	}
+
+	// read data from PVC
+	persistData, stdErr := execCommandInPod(f, fmt.Sprintf("cat %s", dataPath), nameSpace, &opt)
+	Expect(stdErr).Should(BeEmpty())
+	if !strings.Contains(persistData, data) {
+		return fmt.Errorf("data not persistent: expected data %s received data %s ", data, persistData)
+	}
+
+	return err
 }
