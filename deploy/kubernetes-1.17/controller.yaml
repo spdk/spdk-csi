@@ -18,19 +18,19 @@ spec:
       hostNetwork: true
       containers:
       - name: spdkcsi-provisioner
-        image: quay.io/k8scsi/csi-provisioner:v1.4.0
+        image: k8s.gcr.io/sig-storage/csi-provisioner:v2.0.2
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"
         - "--csi-address=unix:///csi/csi-provisioner.sock"
         - "--timeout=30s"
         - "--retry-interval-start=500ms"
-        - "--enable-leader-election=false"
+        - "--leader-election=false"
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
       - name: spdkcsi-attacher
-        image: quay.io/k8scsi/csi-attacher:v2.1.1
+        image: k8s.gcr.io/sig-storage/csi-attacher:v3.0.0
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"

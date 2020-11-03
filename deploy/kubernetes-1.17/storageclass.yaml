@@ -4,5 +4,7 @@ kind: StorageClass
 metadata:
   name: spdkcsi-sc
 provisioner: csi.spdk.io
+parameters:
+  fsType: ext4
 reclaimPolicy: Delete
 volumeBindingMode: Immediate

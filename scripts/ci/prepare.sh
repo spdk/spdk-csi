@@ -69,43 +69,6 @@ function build_spdkimage() {
     sudo docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" "${spdkdir}"
 }
 
-# no official arm64 k8scsi image available, build our own
-function build_arm_csi_image() {
-    # XXX: must match deploy/kubernetes/controller.yaml, node.yaml
-    registry=quay.io/k8scsi
-    ver_provisioner=v1.4.0
-    ver_attacher=v2.1.1
-    ver_node_driver=v1.2.0
-
-    godir="${HOME}/go/src/github.com/kubernetes-csi/"
-    mkdir -p "${godir}"
-    export PATH="/usr/local/go/bin:${PATH}"
-
-    echo "============= building k8scsi containers =============="
-    git clone https://github.com/kubernetes-csi/external-provisioner "${godir}/external-provisioner" --branch ${ver_provisioner} --depth 1
-    cd "${godir}/external-provisioner"
-    sed -i '/GOOS=windows/d' release-tools/build.make
-    make container
-    docker tag csi-provisioner:latest ${registry}/csi-provisioner:${ver_provisioner}
-    docker rmi csi-provisioner:latest
-    rm -rf "${godir}/external-provisioner"
-
-    git clone https://github.com/kubernetes-csi/external-attacher "${godir}/external-attacher" --branch ${ver_attacher} --depth 1
-    cd "${godir}/external-attacher"
-    make container
-    docker tag csi-attacher:latest ${registry}/csi-attacher:${ver_attacher}
-    docker rmi csi-attacher:latest
-    rm -rf "${godir}/external-attacher"
-
-    git clone https://github.com/kubernetes-csi/node-driver-registrar "${godir}/node-driver-registrar" --branch ${ver_node_driver} --depth 1
-    cd "${godir}/node-driver-registrar"
-    sed -i '/GOOS=windows/d' release-tools/build.make
-    make container
-    docker tag csi-node-driver-registrar:latest ${registry}/csi-node-driver-registrar:${ver_node_driver}
-    docker rmi csi-node-driver-registrar:latest
-    rm -rf "${godir}/node-driver-registrar"
-}
-
 echo "This script is meant to run on CI nodes."
 echo "It will install packages and docker images on current host."
 echo "Make sure you understand what it does before going on."
@@ -119,7 +82,6 @@ check_os
 install_packages
 install_golang
 build_spdkimage
-[ "$(arch)" == aarch64 ] && build_arm_csi_image
 
 echo "========================================================"
 [ -n "${golang_info}" ] && echo "INFO: ${golang_info}"
