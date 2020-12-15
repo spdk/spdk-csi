@@ -18,6 +18,7 @@ package spdk
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 
@@ -211,6 +212,14 @@ func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeReq
 
 	fsType := req.GetVolumeCapability().GetMount().GetFsType()
 	mntFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
+
+	switch req.VolumeCapability.AccessMode.Mode {
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
+		mntFlags = append(mntFlags, "ro")
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
+		return "", errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
+	}
+
 	klog.Infof("mount %s to %s, fstype: %s, flags: %v", devicePath, stagingPath, fsType, mntFlags)
 	mounter := mount.SafeFormatAndMount{Interface: ns.mounter, Exec: exec.New()}
 	err = mounter.FormatAndMount(devicePath, stagingPath, fsType, mntFlags)
