@@ -43,7 +43,7 @@ function check_os() {
 
 function install_packages_ubuntu() {
     apt-get update -y
-    apt-get install -y make gcc curl docker.io
+    apt-get install -y make gcc curl docker.io conntrack
     systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
