@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+
+{{- if .Values.externallyManagedConfigmap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spdkcsi-cm
+data:
+  # rpcURL: spdk json rpc target
+  # targetType: nvme-rdma, nvme-tcp, iscsi
+  # targetAddr: target service IP
+  config.json: |-
+{{ toJson .Values.csiConfig | indent 4 -}}
+{{- end }}

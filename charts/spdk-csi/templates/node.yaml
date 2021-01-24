@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: spdkcsi-node
+  namespace: {{ .Release.Namespace }}
+{{ include "spdk.labels" . | indent 2 }}
+spec:
+  selector:
+    matchLabels:
+      app: spdkcsi-node
+  template:
+    metadata:
+{{ include "spdk.labels" . | indent 6 }}
+        app: spdkcsi-node
+    spec:
+      serviceAccount: spdkcsi-node-sa
+      hostNetwork: true
+      containers:
+      - name: spdkcsi-registrar
+        securityContext:
+          privileged: true
+        image: "{{ .Values.image.nodeDriverRegistrar.repository }}:{{ .Values.image.nodeDriverRegistrar.tag }}"
+        imagePullPolicy: {{ .Values.image.nodeDriverRegistrar.pullPolicy }}
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi.sock"
+        - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.spdk.io/csi.sock"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: registration-dir
+          mountPath: /registration
+      - name: spdkcsi-node
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["SYS_ADMIN"]
+          allowPrivilegeEscalation: true
+        image: "{{ .Values.image.spdkcsi.repository }}:{{ .Values.image.spdkcsi.tag }}"
+        imagePullPolicy: {{ .Values.image.spdkcsi.pullPolicy }}
+        args:
+        - "--v=5"
+        - "--endpoint=unix:///csi/csi.sock"
+        - "--nodeid=$(NODE_ID)"
+        - "--node"
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c",
+                        "/usr/sbin/iscsid || echo failed to start iscsid"]
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: plugin-dir
+          mountPath: /var/lib/kubelet/plugins
+          mountPropagation: "Bidirectional"
+        - name: pod-dir
+          mountPath: /var/lib/kubelet/pods
+          mountPropagation: "Bidirectional"
+        - name: host-dev
+          mountPath: /dev
+        - name: host-sys
+          mountPath: /sys
+      volumes:
+      - name: socket-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins/csi.spdk.io
+          type: DirectoryOrCreate
+      - name: registration-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry/
+          type: Directory
+      - name: plugin-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: Directory
+      - name: pod-dir
+        hostPath:
+          path: /var/lib/kubelet/pods
+          type: Directory
+      - name: host-dev
+        hostPath:
+          path: /dev
+      - name: host-sys
+        hostPath:
+          path: /sys

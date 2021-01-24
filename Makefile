@@ -61,6 +61,7 @@ yamllint:
 	@echo === running yamllint
 	@if hash yamllint 2> /dev/null; then                     \
 	     yamllint -s -c scripts/yamllint.yml $(SCRIPT_DIRS); \
+	     bash scripts/verify-helm-yamllint.sh;               \
 	 else                                                    \
 	     echo yamllint not installed, skip test;             \
 	 fi

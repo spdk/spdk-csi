@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+image:
+  spdkcsi:
+    repository: spdkcsi/spdkcsi
+    tag: canary
+    pullPolicy: Never
+  csiProvisioner:
+    repository: k8s.gcr.io/sig-storage/csi-provisioner
+    tag: v2.0.2
+    pullPolicy: IfNotPresent
+  csiAttacher:
+    repository: k8s.gcr.io/sig-storage/csi-attacher
+    tag: v3.0.0
+    pullPolicy: IfNotPresent
+  nodeDriverRegistrar:
+    repository: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+    tag: v2.0.1
+    pullPolicy: IfNotPresent
+
+serviceAccount:
+  # Specifies whether a serviceAccount should be created
+  create: true
+
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+externallyManagedConfigmap:
+  # Specifies whether a externallyManagedConfigmap should be created
+  create: true
+
+externallyManagedSecret:
+  # Specifies whether a externallyManagedSecret should be created
+  create: true
+
+spdkdev:
+  # Specifies whether a spdkdev should be created
+  create: true
+
+storageclass:
+  # Specifies whether a spdkdev should be created
+  create: true
+
+controller:
+  replicas: 1
+
+# Configuration for the CSI to connect to the cluster
+csiConfig:
+  nodes:
+  - name: &name localhost
+    rpcURL: 'http://127.0.0.1:9009'
+    targetType: nvme-tcp
+    targetAddr: 127.0.0.1
+
+# Configuration for the csiSecret
+csiSecret:
+  rpcTokens:
+  # The "name" matches "csiConfig.node.name"
+  - name: *name
+    username: spdkcsiuser
+    password: spdkcsipass
+
+spdkdevCreateCommonds:
+  /root/spdk/app/spdk_tgt/spdk_tgt > /tmp/spdk-tgt.log 2>&1 &
+  echo wait 5s... && sleep 5s && cd /root/spdk/scripts &&
+  ./rpc.py bdev_malloc_create -b Malloc0 1024 4096 &&
+  ./rpc.py bdev_lvol_create_lvstore Malloc0 lvs0 &&
+  ./rpc_http_proxy.py 127.0.0.1 9009 spdkcsiuser spdkcsipass

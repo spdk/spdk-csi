@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+
+{{- if .Values.spdkdev.create -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spdkdev
+  namespace: {{ .Release.Namespace }}
+{{ include "spdk.labels" . | indent 2 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spdkdev
+  template:
+    metadata:
+{{ include "spdk.labels" . | indent 6 }}
+        app: spdkdev
+    spec:
+      hostNetwork: true
+      containers:
+      - name: spdkdev
+        image: spdkdev:latest
+        imagePullPolicy: Never
+        command: ['sh','-c']
+        args:
+          - >
+            {{ .Values.spdkdevCreateCommonds }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: dev
+          mountPath: /dev
+        - name: shm
+          mountPath: /dev/shm
+        - name: modules
+          mountPath: /lib/modules
+        - name: hugepage-2mi
+          mountPath: /hugepages-2Mi
+        resources:
+          limits:
+            hugepages-2Mi: 2Gi
+            memory: 1Ti
+          requests:
+            hugepages-2Mi: 2Gi
+            memory: 256Mi
+      volumes:
+      - name: dev
+        hostPath:
+          path: /dev
+      - name: shm
+        hostPath:
+          path: /dev/shm
+      - name: modules
+        hostPath:
+          path: /lib/modules
+      - name: hugepage-2mi
+        emptyDir:
+          medium: HugePages-2Mi
+{{- end -}}
