@@ -1,19 +1,21 @@
 # Deploy SPDKCSI in multi-node environment
 
-This tutorial is about deploying SPDKCSI on multiple servers. The Kubernetes cluster contains three nodes, one master and two workers. And there is one dedicated storage node with NVMe device and runs SPDK software stack. Kubernetes worker nodes access SPDK storage through NVMe over TCP.
+This tutorial is about deploying SPDKCSI on multiple servers. The Kubernetes cluster contains three nodes, one primary and two workers. And there is one dedicated storage node with NVMe device and runs SPDK software stack. Kubernetes worker nodes access SPDK storage through NVMe over TCP.
 
 ## Nodes
 
 | Hostname   | IP                | Purpose                           | OS           |
 | ---------- | ----------------- | --------------------------------- | ------------ |
-| k8s-master | 192.168.12.200/24 | Kubernetes cluster master node    | Ubuntu-18.04 |
+| k8s-prim   | 192.168.12.200/24 | Kubernetes cluster primary node   | Ubuntu-18.04 |
 | k8s-node1  | 192.168.12.201/24 | Kubernetes cluster worker node #1 | Ubuntu-18.04 |
 | k8s-node2  | 192.168.12.202/24 | Kubernetes cluster worker node #2 | Ubuntu-18.04 |
 | spdk-node  | 192.168.12.203/24 | Storage node running SPDK service | Ubuntu-18.04 |
 
 ## Deploy Kubernetes cluster
 
-Deploy Kubernetes cluster (one master, two workers) on hosts `k8s-master`, `k8s-node1` and `k8s-node2`, using [kubeadm](https://github.com/kubernetes/kubeadm), [kubespray](https://github.com/kubernetes-sigs/kubespray) or other deployment tools.
+Deploy Kubernetes cluster (one primary, two workers) on hosts `k8s-prim`, `k8s-node1` and `k8s-node2`, using [kubeadm](https://github.com/kubernetes/kubeadm), [kubespray](https://github.com/kubernetes-sigs/kubespray) or other deployment tools.
+
+Once you have deployed Kubernetes, prepare each node in the cluster with some pre-requisites by running `/spdk-csi/scripts/ci/prepare.sh`.
 
 ## Build SPDKCSI image
 
@@ -51,12 +53,12 @@ spdk-node:~/spdk$ sudo scripts/rpc_http_proxy.py 192.168.12.203 9009 spdkcsiuser
 
 ## Deploy SPDKCSI
 
-Run SPDKCSI deployment scripts on host `k8s-master`.
+Run SPDKCSI deployment scripts on host `k8s-prim`.
 
 - Clone code
   ```bash
-  k8s-master:~$ git clone https://review.spdk.io/gerrit/spdk/spdk-csi
-  k8s-master:~$ cd spdk-csi/deploy/kubernetes
+  k8s-prim:~$ git clone https://review.spdk.io/gerrit/spdk/spdk-csi
+  k8s-prim:~$ cd spdk-csi/deploy/kubernetes
   ```
 
 - Update `config-map.yaml` config.json section
@@ -90,10 +92,10 @@ Run SPDKCSI deployment scripts on host `k8s-master`.
 
 - Deploy SPDKCSI drivers
   ```bash
-  k8s-master:~/spdk-csi/deploy/kubernetes$ ./deploy.sh
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ ./deploy.sh
 
   # Check CSI controller and node drivers readiness
-  k8s-master:~/spdk-csi/deploy/kubernetes$ kubectl get pods
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl get pods
   NAME                   READY   STATUS    RESTARTS   AGE
   spdkcsi-controller-0   3/3     Running   0          10s
   spdkcsi-node-5rf97     2/2     Running   0          10s
@@ -103,30 +105,30 @@ Run SPDKCSI deployment scripts on host `k8s-master`.
 - Deploy test pod
 Test pod applies 256MB block storage from SPDKCSI driver and mount to /spdkvol directory. The storage is provided by SPDK node and imported to Kubernetes worker node through NVMe-TCP.
   ```bash
-  k8s-master:~/spdk-csi/deploy/kubernetes$ kubectl apply -f testpod.yaml
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl apply -f testpod.yaml
 
   # Check test pod readiness
-  k8s-master:~/spdk-csi/deploy/kubernetes$ kubectl get pods/spdkcsi-test
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl get pods/spdkcsi-test
   NAME           READY   STATUS    RESTARTS   AGE
   spdkcsi-test   1/1     Running   0          47s
 
   # Check mounted volume in test pod
-  k8s-master:~/spdk-csi/deploy/kubernetes$ kubectl exec -it spdkcsi-test mount | grep spdk
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl exec -it spdkcsi-test mount | grep spdk
   /dev/disk/by-id/nvme-6533e2c6-d69b-4529-8666-504cb1ee63a9_spdkcsi-sn on /spdkvol type ext4 (rw,relatime)
   ```
 
 - Delete test pod and CSI drivers
   ```bash
-  k8s-master:~/spdk-csi/deploy/kubernetes$ kubectl delete -f testpod.yaml
-  k8s-master:~/spdk-csi/deploy/kubernetes$ ./deploy.sh teardown
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl delete -f testpod.yaml
+  k8s-prim:~/spdk-csi/deploy/kubernetes$ ./deploy.sh teardown
   ```
 
 ## Debug
 
 - Check SPDKCSI driver logs
   ```bash
-  k8s-master:~$ kubectl logs spdkcsi-controller-0 spdkcsi-controller
-  k8s-master:~$ kubectl logs spdkcsi-node-5rf97 spdkcsi-node
+  k8s-prim:~$ kubectl logs spdkcsi-controller-0 spdkcsi-controller
+  k8s-prim:~$ kubectl logs spdkcsi-node-5rf97 spdkcsi-node
   ```
 
 - Check NVMe event logs
