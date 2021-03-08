@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
 ---
 # https://github.com/golangci/golangci-lint/blob/master/.golangci.example.yml
 # This file contains all available configuration options
