@@ -60,7 +60,7 @@ type TryLock struct {
 
 // acquire lock w/o waiting, return true if acquired, false otherwise
 func (lock *TryLock) Lock() bool {
-	// golang cas forces sequential consistent meory order
+	// golang CAS forces sequential consistent memory order
 	return atomic.CompareAndSwapInt32(&lock.locked, 0, 1)
 }
 

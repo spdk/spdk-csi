@@ -52,9 +52,9 @@ import (
 // - PublishVolume/UnpublishVolume/DeleteVolume for *same volume* is not thread
 //   safe, concurrent access may lead to data race. Caller must serialize these
 //   calls to *same volume*, possibly by mutex or message queue per volume.
-// - Implementation should make sure LvStores and VolumeInfo are thead safe,
+// - Implementation should make sure LvStores and VolumeInfo are thread safe,
 //   but it doesn't lock the returned resources. It means caller should adopt
-//   optimistic concurrency control and retry on specific failuers.
+//   optimistic concurrency control and retry on specific failures.
 //   E.g, caller calls LvStores and finds a volume store with enough free space,
 //   it calls CreateVolume but fails with "not enough space" because another
 //   caller may issue similar request at same time. The failed caller may redo
