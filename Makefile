@@ -95,6 +95,15 @@ e2e-test:
 	@echo === running e2e test
 	@go test -timeout 30m ./e2e
 
+# helm test
+.PHONY: helm-test
+helm-test:
+	@echo === running helm test
+	@./scripts/install-helm.sh up
+	@./scripts/install-helm.sh install-spdkcsi
+	@./scripts/install-helm.sh cleanup-spdkcsi
+	@./scripts/install-helm.sh clean
+
 # docker image
 image: spdkcsi
 	@echo === running docker build

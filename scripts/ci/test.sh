@@ -58,8 +58,12 @@ function e2e_test() {
     make -C "${ROOTDIR}" e2e-test
 }
 
-function cleanup() {
+function helm_test() {
     sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || :
+    make -C "${ROOTDIR}" helm-test
+}
+
+function cleanup() {
     sudo "${ROOTDIR}/scripts/minikube.sh" clean || :
     # TODO: remove dangling nvmf,iscsi disks
 }
@@ -70,3 +74,4 @@ trap cleanup EXIT
 prepare_spdk
 unit_test
 e2e_test
+helm_test
