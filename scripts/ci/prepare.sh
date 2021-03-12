@@ -10,9 +10,11 @@ source "${DIR}/env"
 
 function check_os() {
     # check distro
-    distro="$(lsb_release -is)"
-    if [ "${distro}" != "Ubuntu" ]; then
-        echo "only supports ubuntu now"
+    source /etc/os-release
+    distro=${NAME,,}
+
+    if [ "${distro}" != "ubuntu" ] && [ "${distro}" != "fedora" ]; then
+        echo "Only supports Ubuntu and Fedora now"
         exit 1
     fi
     # check nvme-tcp kernel module
@@ -27,19 +29,44 @@ function check_os() {
         exit 1
     fi
     # check if open-iscsi is installed on host
-    if dpkg -l open-iscsi > /dev/null 2>&1; then
+    iscsi_check_cmd="dpkg -l open-iscsi > /dev/null 2>&1"
+    if [[ "${distro}" == "fedora" ]]; then
+        iscsi_check_cmd="rpm --quiet -q iscsi-initiator-utils"
+    fi
+    if $iscsi_check_cmd; then
         echo "please remove open-iscsi package on the host"
         exit 1
     fi
 }
 
-function install_packages() {
+function install_packages_ubuntu() {
     sudo apt-get update -y
     sudo apt-get install -y make gcc curl docker.io
     sudo systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
         sudo apt-get install -y python3-pip
+        sudo pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
+    fi
+}
+
+function install_packages_fedora() {
+    sudo dnf check-update || true
+    sudo dnf install -y make gcc curl
+
+    if ! hash docker &> /dev/null; then
+        sudo dnf remove -y docker*
+        sudo dnf install -y dnf-plugins-core
+        sudo dnf config-manager --add-repo \
+            https://download.docker.com/linux/fedora/docker-ce.repo
+        sudo dnf check-update || true
+        sudo dnf install -y docker-ce docker-ce-cli containerd.io
+    fi
+
+    sudo systemctl start docker
+    # install static check tools only on x86 agent
+    if [ "$(arch)" == x86_64 ]; then
+        sudo dnf install -y python3-pip
         sudo pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
     fi
 }
@@ -79,7 +106,7 @@ case "${yn}" in
 esac
 
 check_os
-install_packages
+install_packages_"${distro}"
 install_golang
 build_spdkimage
 
