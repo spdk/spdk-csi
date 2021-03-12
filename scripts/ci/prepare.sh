@@ -40,34 +40,34 @@ function check_os() {
 }
 
 function install_packages_ubuntu() {
-    sudo apt-get update -y
-    sudo apt-get install -y make gcc curl docker.io
-    sudo systemctl start docker
+    apt-get update -y
+    apt-get install -y make gcc curl docker.io
+    systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
-        sudo apt-get install -y python3-pip
-        sudo pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
+        apt-get install -y python3-pip
+        pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
     fi
 }
 
 function install_packages_fedora() {
-    sudo dnf check-update || true
-    sudo dnf install -y make gcc curl
+    dnf check-update || true
+    dnf install -y make gcc curl
 
     if ! hash docker &> /dev/null; then
-        sudo dnf remove -y docker*
-        sudo dnf install -y dnf-plugins-core
-        sudo dnf config-manager --add-repo \
+        dnf remove -y docker*
+        dnf install -y dnf-plugins-core
+        dnf config-manager --add-repo \
             https://download.docker.com/linux/fedora/docker-ce.repo
-        sudo dnf check-update || true
-        sudo dnf install -y docker-ce docker-ce-cli containerd.io
+        dnf check-update || true
+        dnf install -y docker-ce docker-ce-cli containerd.io
     fi
+    systemctl start docker
 
-    sudo systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
-        sudo dnf install -y python3-pip
-        sudo pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
+        dnf install -y python3-pip
+        pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
     fi
 }
 
@@ -82,19 +82,24 @@ function install_golang() {
         ARCH=arm64
     fi
     GOPKG=go${GOVERSION}.linux-${ARCH}.tar.gz
-    curl -s https://dl.google.com/go/${GOPKG} | sudo tar -C /usr/local -xzf -
+    curl -s https://dl.google.com/go/${GOPKG} | tar -C /usr/local -xzf -
     /usr/local/go/bin/go version
 }
 
 function build_spdkimage() {
-    if sudo docker inspect --type=image "${SPDKIMAGE}" >/dev/null 2>&1; then
+    if docker inspect --type=image "${SPDKIMAGE}" >/dev/null 2>&1; then
         spdkimage_info="${SPDKIMAGE} image exists, build skipped"
         return
     fi
     echo "============= building spdk container =============="
     spdkdir="${ROOTDIR}/deploy/spdk"
-    sudo docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" "${spdkdir}"
+    docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" "${spdkdir}"
 }
+
+if [[ $(id -u) != "0" ]]; then
+    echo "Go away user, come back as root."
+    exit 1
+fi
 
 echo "This script is meant to run on CI nodes."
 echo "It will install packages and docker images on current host."
