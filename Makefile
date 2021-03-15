@@ -97,7 +97,11 @@ e2e-test:
 # docker image
 image: spdkcsi
 	@echo === running docker build
-	docker build -t $(CSI_IMAGE) -f deploy/image/Dockerfile $(OUT_DIR)
+	@if [ -n $(HTTP_PROXY) ]; then \
+		proxy_opt="--build-arg http_proxy=$(HTTP_PROXY) --build-arg https_proxy=$(HTTP_PROXY)"; \
+	fi; \
+	docker build -t $(CSI_IMAGE) $$proxy_opt \
+	-f deploy/image/Dockerfile $(OUT_DIR)
 
 .PHONY: clean
 clean:

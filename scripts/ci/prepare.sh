@@ -7,6 +7,8 @@
 DIR="$(dirname "$(readlink -f "$0")")"
 # shellcheck source=scripts/ci/env
 source "${DIR}/env"
+# shellcheck source=scripts/ci/common.sh
+source "${DIR}/common.sh"
 
 function check_os() {
     # check distro
@@ -91,9 +93,28 @@ function build_spdkimage() {
         spdkimage_info="${SPDKIMAGE} image exists, build skipped"
         return
     fi
+
+    if [ -n "$HTTP_PROXY" ] && [ -n "$HTTPS_PROXY" ]; then
+        docker_proxy_opt=("--build-arg" "http_proxy=$HTTP_PROXY" "--build-arg" "https_proxy=$HTTPS_PROXY")
+    fi
+
     echo "============= building spdk container =============="
     spdkdir="${ROOTDIR}/deploy/spdk"
-    docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" "${spdkdir}"
+    docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" \
+    "${docker_proxy_opt[@]}" "${spdkdir}"
+}
+
+function configure_proxy() {
+    export_proxy
+    mkdir -p /etc/systemd/system/docker.service.d
+    cat <<- EOF > /etc/systemd/system/docker.service.d/http-proxy.conf
+[Service]
+Environment="HTTP_PROXY=$HTTP_PROXY"
+Environment="HTTPS_PROXY=$HTTPS_PROXY"
+Environment="NO_PROXY=$NO_PROXY"
+EOF
+    systemctl daemon-reload
+    systemctl restart docker
 }
 
 if [[ $(id -u) != "0" ]]; then
@@ -113,6 +134,7 @@ esac
 check_os
 install_packages_"${distro}"
 install_golang
+configure_proxy
 build_spdkimage
 
 echo "========================================================"

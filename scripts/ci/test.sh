@@ -5,6 +5,8 @@
 DIR="$(dirname "$(readlink -f "$0")")"
 # shellcheck source=scripts/ci/env
 source "${DIR}/env"
+# shellcheck source=scripts/ci/common.sh
+source "${DIR}/common.sh"
 
 SPDK_CONTAINER="spdkdev-${RANDOM}"
 
@@ -62,6 +64,7 @@ function cleanup() {
     # TODO: remove dangling nvmf,iscsi disks
 }
 
+export_proxy
 build
 trap cleanup EXIT
 prepare_spdk
