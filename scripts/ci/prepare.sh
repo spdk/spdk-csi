@@ -101,7 +101,7 @@ function build_spdkimage() {
     echo "============= building spdk container =============="
     spdkdir="${ROOTDIR}/deploy/spdk"
     docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" \
-    "${docker_proxy_opt[@]}" "${spdkdir}"
+    "${docker_proxy_opt[@]}" "${spdkdir}" && spdkimage_info="${SPDKIMAGE} image build successfully."
 }
 
 function configure_proxy() {
