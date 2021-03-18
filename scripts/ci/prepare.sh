@@ -117,6 +117,12 @@ EOF
     systemctl restart docker
 }
 
+function configure_system_fedora() {
+    # Make life easier and set SE Linux to Permissive if it's
+    # not already disabled.
+    [ "$(getenforce)" != "Disabled" ] && setenforce "Permissive"
+}
+
 if [[ $(id -u) != "0" ]]; then
     echo "Go away user, come back as root."
     exit 1
@@ -135,6 +141,7 @@ check_os
 install_packages_"${distro}"
 install_golang
 configure_proxy
+[ "${distro}" == "fedora" ] && configure_system_fedora
 build_spdkimage
 
 echo "========================================================"
