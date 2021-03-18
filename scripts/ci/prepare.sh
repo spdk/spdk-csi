@@ -52,7 +52,7 @@ function install_packages_ubuntu() {
 
 function install_packages_fedora() {
     dnf check-update || true
-    dnf install -y make gcc curl
+    dnf install -y make gcc curl conntrack bind-utils socat
 
     if ! hash docker &> /dev/null; then
         dnf remove -y docker*
