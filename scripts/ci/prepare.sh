@@ -121,6 +121,14 @@ function configure_system_fedora() {
     # Make life easier and set SE Linux to Permissive if it's
     # not already disabled.
     [ "$(getenforce)" != "Disabled" ] && setenforce "Permissive"
+
+    # Disable swap memory so that minikube does not complain.
+    # On recent Fedora systemd releases also remove zram tools
+    # to keep swap from regenerating.
+    if rpm -q --quiet systemd; then
+        dnf remove -y zram*
+    fi
+    swapoff -a
 }
 
 if [[ $(id -u) != "0" ]]; then
