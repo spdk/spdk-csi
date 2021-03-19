@@ -28,7 +28,7 @@ case "$1" in
 	up)
 		install_minikube
 		echo "=== starting minikube with kubeadm bootstrapper"
-		CHANGE_MINIKUBE_NONE_USER=true minikube start -b kubeadm --kubernetes-version="${KUBE_VERSION}" --vm-driver="${MINIKUBE_DRIVER}"
+		CHANGE_MINIKUBE_NONE_USER=true minikube start -b kubeadm --kubernetes-version="${KUBE_VERSION}" --vm-driver="${MINIKUBE_DRIVER}" --alsologtostderr -v=5
 		"/var/lib/minikube/binaries/${KUBE_VERSION}/kubectl" cluster-info
 		;;
 	down)
