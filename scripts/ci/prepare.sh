@@ -136,14 +136,16 @@ if [[ $(id -u) != "0" ]]; then
     exit 1
 fi
 
-echo "This script is meant to run on CI nodes."
-echo "It will install packages and docker images on current host."
-echo "Make sure you understand what it does before going on."
-read -r -p "Do you want to continue (yes/no)? " yn
-case "${yn}" in
-    y|Y|yes|Yes|YES) :;;
-    *) exit 0;;
-esac
+if [[ "$1" != "-y" ]]; then
+    echo "This script is meant to run on CI nodes."
+    echo "It will install packages and docker images on current host."
+    echo "Make sure you understand what it does before going on."
+    read -r -p "Do you want to continue (yes/no)? " yn
+    case "${yn}" in
+        y|Y|yes|Yes|YES) :;;
+        *) exit 0;;
+    esac
+fi
 
 check_os
 install_packages_"${distro}"
