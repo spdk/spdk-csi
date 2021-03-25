@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) Arm Limited and Contributors
 # Copyright (c) Intel Corporation
-FROM fedora:31
+FROM fedora:33
 
 ARG TAG=v20.01
 ARG ARCH=native
