@@ -32,6 +32,19 @@ spec:
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
+      - name: spdkcsi-snapshotter
+        image: k8s.gcr.io/sig-storage/csi-snapshotter:v3.0.3
+        args:
+        - "--csi-address=unix:///csi/csi-provisioner.sock"
+        - "--v=5"
+        - "--timeout=150s"
+        - "--leader-election=false"
+        imagePullPolicy: "IfNotPresent"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
       - name: spdkcsi-attacher
         image: k8s.gcr.io/sig-storage/csi-attacher:v3.0.0
         imagePullPolicy: "IfNotPresent"
