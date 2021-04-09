@@ -106,9 +106,10 @@ function install_packages_ubuntu() {
 	systemctl start docker
 	# install static check tools only on x86 agent
 	if [ "$(arch)" == x86_64 ]; then
-		apt-get install -y python3-pip
+		apt-get install -y python3-pip ruby
 		pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
 	fi
+	gem install mdl -v 0.12.0
 }
 
 function install_packages_fedora() {
@@ -119,7 +120,8 @@ function install_packages_fedora() {
 					conntrack \
 					bind-utils \
 					socat \
-					wget
+					wget \
+					ruby
 	if ! hash docker &> /dev/null; then
 		dnf remove -y docker*
 		dnf install -y dnf-plugins-core
@@ -132,9 +134,10 @@ function install_packages_fedora() {
 
 	# install static check tools only on x86 agent
 	if [ "$(arch)" == x86_64 ]; then
-		dnf install -y python3-pip
+		dnf install -y python3-pip ruby
 		pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
 	fi
+	gem install mdl -v 0.12.0
 }
 
 function install_golang() {

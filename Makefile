@@ -45,7 +45,7 @@ spdkcsi:
 	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -buildvcs=false -o $(OUT_DIR)/spdkcsi ./cmd/
 
 # static code check, text lint
-lint: golangci yamllint shellcheck
+lint: golangci yamllint shellcheck mdl
 
 .PHONY: golangci
 golangci: $(GOLANGCI_BIN)
@@ -75,6 +75,16 @@ shellcheck:
 	 else                                                                \
 	     echo shellcheck not installed, skip test;                       \
 	 fi
+
+.PHONY: mdl
+mdl:
+	@echo === running mdl
+	@if hash mdl 2> /dev/null; then                                      \
+		find ./ -name "*.md" | xargs readlink -f  | xargs mdl --style scripts/ci/mdl_rules.rb; \
+	else                                                                 \
+	    echo Markdown linter not found, please install;                  \
+	    false                                          ;                 \
+	fi
 
 # tests
 test: mod-check unit-test
