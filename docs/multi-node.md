@@ -1,6 +1,8 @@
 # Deploy SPDKCSI in multi-node environment
 
-This tutorial is about deploying SPDKCSI on multiple servers. The Kubernetes cluster contains three nodes, one primary and two workers. And there is one dedicated storage node with NVMe device and runs SPDK software stack. Kubernetes worker nodes access SPDK storage through NVMe over TCP.
+This tutorial is about deploying SPDKCSI on multiple servers. The Kubernetes cluster contains three nodes,
+one primary and two workers. And there is one dedicated storage node with NVMe device and runs SPDK software stack.
+Kubernetes worker nodes access SPDK storage through NVMe over TCP.
 
 ## Nodes
 
@@ -13,24 +15,32 @@ This tutorial is about deploying SPDKCSI on multiple servers. The Kubernetes clu
 
 ## Deploy Kubernetes cluster
 
-Deploy Kubernetes cluster (one primary, two workers) on hosts `k8s-prim`, `k8s-node1` and `k8s-node2`, using [kubeadm](https://github.com/kubernetes/kubeadm), [kubespray](https://github.com/kubernetes-sigs/kubespray) or other deployment tools.
+Deploy Kubernetes cluster (one primary, two workers) on hosts `k8s-prim`, `k8s-node1` and `k8s-node2`,
+using [kubeadm](https://github.com/kubernetes/kubeadm), [kubespray](https://github.com/kubernetes-sigs/kubespray)
+or other deployment tools.
 
-Once you have deployed Kubernetes, prepare each node in the cluster with some pre-requisites by running `/spdk-csi/scripts/ci/prepare.sh`.
+Once you have deployed Kubernetes, prepare each node in the cluster with some pre-requisites by running
+`/spdk-csi/scripts/ci/prepare.sh`.
 
 ## Build SPDKCSI image
 
 SPDKCSI image `spdkcsi/spdkcsi:canary` needs to be manually built on all Kubernetes worker nodes before deployment.
 Run the one-liner below on hosts `k8s-node1` and `k8s-node2` where CSI controller and node servers will be scheduled.
+
 ```bash
-k8s-node1:~$ docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock golang:1.14 bash -c "apt update && apt install -y make git docker.io && git clone https://review.spdk.io/gerrit/spdk/spdk-csi && cd spdk-csi && make image"
+k8s-node1:~$ docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock golang:1.14 \
+  bash -c "apt update && apt install -y make git docker.io && \
+  git clone https://review.spdk.io/gerrit/spdk/spdk-csi && cd spdk-csi && make image"
 ```
 
 ## Start SPDK service
 
 ### Build SPDK
+
 Please follow [SPDK Getting Started](https://spdk.io/doc/getting_started.html) to build and setup SPDK on host `spdk-node`.
 
 ### Start SPDK
+
 ```bash
 # Assume your cloned SPDK source code to ~/spdk.
 # Start SPDK target
@@ -40,11 +50,15 @@ spdk-node:~/spdk$ sudo scripts/rpc.py bdev_nvme_attach_controller -b NVMe0 -t PC
 # Create logical volume store based on NVMe bdev
 spdk-node:~/spdk$ sudo scripts/rpc.py bdev_lvol_create_lvstore NVMe0n1 lvs
 ```
-Please reference SPDK [Block Device User Guide](https://spdk.io/doc/bdev.html) and [Logical Volumes](https://spdk.io/doc/logical_volumes.html) document.
+
+Please reference SPDK [Block Device User Guide](https://spdk.io/doc/bdev.html) and
+[Logical Volumes](https://spdk.io/doc/logical_volumes.html) document.
 
 ### Start JSON RPC http proxy
+
 JSON RPC http proxy enables remote access to SPDK service.
 Below commands start proxy on port 9009 with specified username and password.
+
 ```bash
 # Accept remote JSON RPC requests on 192.168.12.203:9009 with token
 # username: spdkcsiuser, password: spdkcsipass
@@ -56,12 +70,14 @@ spdk-node:~/spdk$ sudo scripts/rpc_http_proxy.py 192.168.12.203 9009 spdkcsiuser
 Run SPDKCSI deployment scripts on host `k8s-prim`.
 
 - Clone code
+
   ```bash
   k8s-prim:~$ git clone https://review.spdk.io/gerrit/spdk/spdk-csi
   k8s-prim:~$ cd spdk-csi/deploy/kubernetes
   ```
 
 - Update `config-map.yaml` config.json section
+
   ```yaml
   config.json: |-
     {
@@ -77,6 +93,7 @@ Run SPDKCSI deployment scripts on host `k8s-prim`.
   ```
 
 - Update `secret.yaml` secret.json section
+
   ```yaml
   secret.json: |-
     {
@@ -91,6 +108,7 @@ Run SPDKCSI deployment scripts on host `k8s-prim`.
   ```
 
 - Deploy SPDKCSI drivers
+
   ```bash
   k8s-prim:~/spdk-csi/deploy/kubernetes$ ./deploy.sh
 
@@ -103,7 +121,10 @@ Run SPDKCSI deployment scripts on host `k8s-prim`.
   ```
 
 - Deploy test pod
-Test pod applies 256MB block storage from SPDKCSI driver and mount to /spdkvol directory. The storage is provided by SPDK node and imported to Kubernetes worker node through NVMe-TCP.
+
+Test pod applies 256MB block storage from SPDKCSI driver and mount to /spdkvol directory. The storage is provided by
+SPDK node and imported to Kubernetes worker node through NVMe-TCP.
+
   ```bash
   k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl apply -f testpod.yaml
 
@@ -118,6 +139,7 @@ Test pod applies 256MB block storage from SPDKCSI driver and mount to /spdkvol d
   ```
 
 - Delete test pod and CSI drivers
+
   ```bash
   k8s-prim:~/spdk-csi/deploy/kubernetes$ kubectl delete -f testpod.yaml
   k8s-prim:~/spdk-csi/deploy/kubernetes$ ./deploy.sh teardown
@@ -126,14 +148,17 @@ Test pod applies 256MB block storage from SPDKCSI driver and mount to /spdkvol d
 ## Debug
 
 - Check SPDKCSI driver logs
+
   ```bash
   k8s-prim:~$ kubectl logs spdkcsi-controller-0 spdkcsi-controller
   k8s-prim:~$ kubectl logs spdkcsi-node-5rf97 spdkcsi-node
   ```
 
 - Check NVMe event logs
+
 Find the worker node where test pod is scheduled with `kubectl get pods/spdkcsi-test -o wide`
 Login according worker node and check kernel logs.
+
   ```bash
   k8s-node1:~$ dmesg | grep -i nvm
   [ 1150.536656] nvme nvme0: new ctrl: NQN "nqn.2020-04.io.spdk.csi:uuid:57d00891-f065-4fce-9f04-6ee4ab59ea42", addr 192.168.122.203:4420

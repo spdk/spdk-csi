@@ -1,8 +1,9 @@
-### About
+# About
 
-To test SPDKCSI, we need a working SPDK environment. This document explains how to launch SPDK and JsonRPC HTTP proxy on localhost for function tests.
+To test SPDKCSI, we need a working SPDK environment. This document explains how to launch SPDK and JsonRPC HTTP proxy
+on localhost for function tests.
 
-### Step by step
+## Step by step
 
 ```bash
 # build spdk container image
@@ -13,7 +14,8 @@ sudo docker build -t spdkdev .
 sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages'
 
 # start spdk target
-sudo docker run -it --rm --name spdkdev --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm spdkdev /root/spdk/build/bin/spdk_tgt
+sudo docker run -it --rm --name spdkdev --privileged --net host \
+-v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm spdkdev /root/spdk/build/bin/spdk_tgt
 # run below commands in another console
 
 # create 1G malloc bdev
@@ -26,7 +28,7 @@ sudo docker exec -it spdkdev /root/spdk/scripts/rpc.py bdev_lvol_create_lvstore 
 sudo docker exec -it spdkdev /root/spdk/scripts/rpc_http_proxy.py 127.0.0.1 9009 spdkcsiuser spdkcsipass
 ```
 
-### Single command
+## Single command
 
 Combine above steps to a single command can be convenient. But it's harder to debug if error happens.
 

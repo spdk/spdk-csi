@@ -8,7 +8,8 @@ This document outlines how to create static PV and static PVC from existing SPDK
 
 Refer to the following [SPDK documents](https://spdk.io/doc/nvmf.html) to create and publish SPDK logical volume manually.
 
-To create the static PV you need to know the `model`, `nqn`, `lvol`, `targetAddr`, `targetPort`, and `targetType` name of the SPDK logical volume.
+To create the static PV you need to know the `model`, `nqn`, `lvol`, `targetAddr`,
+`targetPort`, and `targetType` name of the SPDK logical volume.
 
 ```yaml
 apiVersion: v1
@@ -89,7 +90,8 @@ $ kubectl create -f pv-static.yaml
 persistentvolume/pv-static created
 ```
 
-**Note:** SPDK-CSI does not supports logical volume deletion for static PV. `persistentVolumeReclaimPolicy` in PV spec must be set to `Retain` to avoid PV delete attempt in csi-provisioner.
+**Note:** SPDK-CSI does not supports logical volume deletion for static PV.
+`persistentVolumeReclaimPolicy` in PV spec must be set to `Retain` to avoid PV delete attempt in csi-provisioner.
 
 ## Create static PVC
 
