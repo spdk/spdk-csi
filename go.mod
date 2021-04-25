@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/container-storage-interface/spec v1.2.0
+	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v1.1.1
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
 	github.com/onsi/ginkgo v1.11.0

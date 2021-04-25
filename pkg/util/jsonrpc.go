@@ -80,6 +80,7 @@ type SpdkNode interface {
 	DeleteVolume(lvolID string) error
 	PublishVolume(lvolID string) error
 	UnpublishVolume(lvolID string) error
+	CreateSnapshot(lvolName, snapshotName string) (string, error)
 }
 
 // logical volume store
@@ -197,6 +198,21 @@ func (client *rpcClient) deleteVolume(lvolID string) error {
 	}
 
 	return err
+}
+
+func (client *rpcClient) snapshot(lvolName, snapShotName string) (string, error) {
+	params := struct {
+		LvolName     string `json:"lvol_name"`
+		SnapShotName string `json:"snapshot_name"`
+	}{
+		LvolName:     lvolName,
+		SnapShotName: snapShotName,
+	}
+
+	var snapshotID string
+	err := client.call("bdev_lvol_snapshot", &params, &snapshotID)
+
+	return snapshotID, err
 }
 
 // low level rpc request/response handling

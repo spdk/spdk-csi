@@ -109,6 +109,16 @@ func (node *nodeNVMf) CreateVolume(lvsName string, sizeMiB int64) (string, error
 	return lvolID, nil
 }
 
+func (node *nodeNVMf) CreateSnapshot(lvolName, snapshotName string) (string, error) {
+	snapshotID, err := node.client.snapshot(lvolName, snapshotName)
+	if err != nil {
+		return "", err
+	}
+
+	klog.V(5).Infof("snapshot created: %s", snapshotID)
+	return snapshotID, nil
+}
+
 func (node *nodeNVMf) DeleteVolume(lvolID string) error {
 	err := node.client.deleteVolume(lvolID)
 	if err != nil {

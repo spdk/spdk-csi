@@ -75,6 +75,7 @@ Example deployment files can be found in deploy/kubernetes directory.
 | node-rbac.yaml       | Access control for CSI Node service        |
 | config-map.yaml      | SPDK storage cluster configurations        |
 | secret.yaml          | SPDK storage cluster access tokens         |
+| snapshotclass.yaml   | SnapshotClass of provisioner "csi.spdk.io" |
 
 ---
 **_NOTE:_**
@@ -107,7 +108,17 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
   ......                                              ......
   ```
 
-2. Deploy SPDK-CSI services
+2. Install snapshot controller and CRD
+  ```bash
+  SNAPSHOT_VERSION="v3.0.3" ./scripts/install-snapshot.sh install
+
+  # Check status
+  $ kubectl get pod snapshot-controller-0
+  NAME                    READY   STATUS    RESTARTS   AGE
+  snapshot-controller-0   1/1     Running   0          6m14s
+  ```
+
+3. Deploy SPDK-CSI services
   ```bash
   $ cd deploy/kubernetes
   $ ./deploy.sh
@@ -119,7 +130,7 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
   spdkcsi-node-lzvg5     2/2     Running   0          3m16s
   ```
 
-3. Deploy test pod
+4. Deploy test pod
   ```bash
   $ cd deploy/kubernetes
   $ kubectl apply -f testpod.yaml
@@ -142,21 +153,50 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
   /dev/disk/by-id/nvme-..._spdkcsi-sn on /spdkvol type ext4 (rw,relatime)
   ```
 
+5. Deploy PVC snapshot
+```bash
+  # Create snapshot of the bound PVC
+  $ cd deploy/kubernetes
+  $ kubectl apply -f snapshot.yaml
+
+  # Get details about the snapshot
+  $ kubectl get volumesnapshot spdk-snapshot
+  NAME            READYTOUSE   SOURCEPVC   ... SNAPSHOTCLASS         AGE
+  spdk-snapshot   false        spdkcsi-pvc ... csi-spdk-snapclass    29s
+
+  # Get details about the volumesnapshotcontent
+  kubectl get volumesnapshotcontent
+  $ kubectl get volumesnapshotcontent
+  NAME        ...   READYTOUSE   RESTORESIZE   DELETIONPOLICY   DRIVER        VOLUMESNAPSHOTCLASS   VOLUMESNAPSHOT   AGE
+  snapcontent-...   true         268435456     Delete           csi.spdk.io   csi-spdk-snapclass    spdk-snapshot    29s
+```
+
 ### Teardown
 
-1. Delete test pod
+1. Delete PVC snapshot
+  ```bash
+  cd deploy/kubernetes
+  kubectl delete -f snapshot.yaml
+  ```
+
+2. Delete test pod
   ```bash
   $ cd deploy/kubernetes
   $ kubectl delete -f testpod.yaml
   ```
 
-2. Delete SPDK-CSI services
+3. Delete SPDK-CSI services
   ```bash
   $ cd deploy/kubernetes
   $ ./deploy.sh teardown
   ```
 
-3. Teardown Kubernetes test cluster
+4. Delete snapshot controller and CRD
+  ```bash
+  SNAPSHOT_VERSION="v3.0.3" ./scripts/install-snapshot.sh cleanup
+  ```
+
+5. Teardown Kubernetes test cluster
   ```bash
   $ cd scripts
   $ sudo ./minikube.sh clean

@@ -69,6 +69,26 @@ func TestISCSI(t *testing.T) {
 		t.Fatalf("iscsiValidateVolumePublished: %s", err)
 	}
 
+	snapshotName := "snapshot-pvc"
+	var snapshotID string
+	snapshotID, err = node.CreateSnapshot(lvolID, snapshotName)
+	if err != nil {
+		t.Fatalf("CreateSnapshot: %s", err)
+	}
+	err = iscsiValidateVolumeCreated(node, snapshotID)
+	if err != nil {
+		t.Fatalf("validateCreateSnapshot: %s", err)
+	}
+
+	err = node.DeleteVolume(snapshotID)
+	if err != nil {
+		t.Fatalf("DeleteSnapshot: %s", err)
+	}
+	err = iscsiValidateVolumeDeleted(node, snapshotID)
+	if err != nil {
+		t.Fatalf("validateSnapshotDeleted: %s", err)
+	}
+
 	err = node.UnpublishVolume(lvolID)
 	if err != nil {
 		t.Fatalf("UnpublishVolume: %s", err)

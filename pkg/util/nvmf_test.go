@@ -85,6 +85,26 @@ func testNVMeoF(trType string, t *testing.T) {
 		t.Fatalf("validateVolumePublished: %s", err)
 	}
 
+	snapshotName := "snapshot-pvc"
+	var snapshotID string
+	snapshotID, err = node.CreateSnapshot(lvolID, snapshotName)
+	if err != nil {
+		t.Fatalf("CreateSnapshot: %s", err)
+	}
+	err = validateVolumeCreated(node, snapshotID)
+	if err != nil {
+		t.Fatalf("validateCreateSnapshot: %s", err)
+	}
+
+	err = node.DeleteVolume(snapshotID)
+	if err != nil {
+		t.Fatalf("DeleteSnapshot: %s", err)
+	}
+	err = validateVolumeDeleted(node, snapshotID)
+	if err != nil {
+		t.Fatalf("validateSnapshotDeleted: %s", err)
+	}
+
 	err = node.UnpublishVolume(lvolID)
 	if err != nil {
 		t.Fatalf("UnpublishVolume: %s", err)
