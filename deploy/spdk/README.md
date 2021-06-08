@@ -13,8 +13,7 @@ sudo docker build -t spdkdev .
 sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages'
 
 # start spdk target
-sudo docker run -it --rm --name spdkdev --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm spdkdev /root/spdk/app/spdk_tgt/spdk_tgt
-
+sudo docker run -it --rm --name spdkdev --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm spdkdev /root/spdk/build/bin/spdk_tgt
 # run below commands in another console
 
 # create 1G malloc bdev
@@ -35,7 +34,7 @@ Combine above steps to a single command can be convenient. But it's harder to de
 sudo docker run -it --rm --privileged --net host \
   -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /proc:/proc \
   spdkdev sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages && \
-                 /root/spdk/app/spdk_tgt/spdk_tgt > /tmp/spdk-tgt.log 2>&1 & \
+                 /root/spdk/build/bin/spdk_tgt > /tmp/spdk-tgt.log 2>&1 & \
                  echo wait 5s... && sleep 5s && cd /root/spdk/scripts && \
                  ./rpc.py bdev_malloc_create -b Malloc0 1024 4096 && \
                  ./rpc.py bdev_lvol_create_lvstore Malloc0 lvs0 && \
