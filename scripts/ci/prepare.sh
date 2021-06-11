@@ -9,6 +9,7 @@ DIR="$(dirname "$(readlink -f "$0")")"
 source "${DIR}/env"
 # shellcheck source=scripts/ci/common.sh
 source "${DIR}/common.sh"
+PROMPT_FLAG=true
 
 function check_os() {
     # check distro
@@ -136,7 +137,19 @@ if [[ $(id -u) != "0" ]]; then
     exit 1
 fi
 
-if [[ "$1" != "-y" ]]; then
+while getopts 'y' optchar; do
+    case "$optchar" in
+        y)
+            PROMPT_FLAG=false
+            ;;
+        *)
+            echo "$0: invalid argument '$optchar'"
+            exit 1
+            ;;
+    esac
+done
+
+if $PROMPT_FLAG; then
     echo "This script is meant to run on CI nodes."
     echo "It will install packages and docker images on current host."
     echo "Make sure you understand what it does before going on."
