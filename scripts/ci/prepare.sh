@@ -132,15 +132,28 @@ function configure_system_fedora() {
     swapoff -a
 }
 
+function docker_login {
+    if [[ -n "$DOCKERHUB_USER" ]] && [[ -n "$DOCKERHUB_SECRET" ]]; then
+        docker login --username "$DOCKERHUB_USER" \
+            --password-stdin <<< "$(cat "$DOCKERHUB_SECRET")"
+    fi
+}
+
 if [[ $(id -u) != "0" ]]; then
     echo "Go away user, come back as root."
     exit 1
 fi
 
-while getopts 'y' optchar; do
+while getopts 'yu:p:' optchar; do
     case "$optchar" in
         y)
             PROMPT_FLAG=false
+            ;;
+        u)
+            DOCKERHUB_USER="$OPTARG"
+            ;;
+        p)
+            DOCKERHUB_SECRET="$OPTARG"
             ;;
         *)
             echo "$0: invalid argument '$optchar'"
@@ -165,6 +178,7 @@ install_packages_"${distro}"
 install_golang
 configure_proxy
 [ "${distro}" == "fedora" ] && configure_system_fedora
+docker_login
 build_spdkimage
 
 echo "========================================================"
