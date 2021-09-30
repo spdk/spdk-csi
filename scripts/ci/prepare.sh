@@ -44,7 +44,7 @@ function check_os() {
 
 function install_packages_ubuntu() {
     apt-get update -y
-    apt-get install -y make gcc curl docker.io conntrack
+    apt-get install -y make gcc curl docker.io conntrack wget
     systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
@@ -55,7 +55,7 @@ function install_packages_ubuntu() {
 
 function install_packages_fedora() {
     dnf check-update || true
-    dnf install -y make gcc curl conntrack bind-utils socat
+    dnf install -y make gcc curl conntrack bind-utils socat wget
 
     if ! hash docker &> /dev/null; then
         dnf remove -y docker*
@@ -106,7 +106,6 @@ function build_spdkimage() {
 }
 
 function configure_proxy() {
-    export_proxy
     mkdir -p /etc/systemd/system/docker.service.d
     cat <<- EOF > /etc/systemd/system/docker.service.d/http-proxy.conf
 [Service]
@@ -173,6 +172,7 @@ if $PROMPT_FLAG; then
     esac
 fi
 
+export_proxy
 check_os
 install_packages_"${distro}"
 install_golang

@@ -30,7 +30,7 @@ function prepare_spdk() {
     # allocate 1024*2M hugepage
     sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages'
     # start spdk target
-    sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm ${SPDKIMAGE} /root/spdk/app/spdk_tgt/spdk_tgt
+    sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm ${SPDKIMAGE} /root/spdk/build/bin/spdk_tgt
     sleep 20s
     # wait for spdk target ready
     sudo docker exec -i "${SPDK_CONTAINER}" timeout 5s /root/spdk/scripts/rpc.py framework_wait_init
@@ -53,7 +53,7 @@ function e2e_test() {
     sudo modprobe iscsi_tcp
     sudo modprobe nvme-tcp
     export KUBE_VERSION MINIKUBE_VERSION
-    sudo --preserve-env "${ROOTDIR}/scripts/minikube.sh" up
+    sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" up
     export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:${PATH}"
     make -C "${ROOTDIR}" e2e-test
 }
@@ -64,11 +64,18 @@ function helm_test() {
 }
 
 function cleanup() {
-    sudo "${ROOTDIR}/scripts/minikube.sh" clean || :
+    sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
     # TODO: remove dangling nvmf,iscsi disks
 }
 
+function docker_login {
+    if [[ -n "$DOCKERHUB_USER" ]] && [[ -n "$DOCKERHUB_SECRET" ]]; then
+        docker login --username "$DOCKERHUB_USER" --password-stdin < "$DOCKERHUB_SECRET"
+    fi
+}
+
 export_proxy
+docker_login
 build
 trap cleanup EXIT
 prepare_spdk
