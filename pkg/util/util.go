@@ -18,7 +18,7 @@ package util
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"os"
 	"sync/atomic"
 )
@@ -30,7 +30,7 @@ func ParseJSONFile(fileName string, result interface{}) error {
 	}
 	defer file.Close()
 
-	bytes, err := ioutil.ReadAll(file)
+	bytes, err := io.ReadAll(file)
 	if err != nil {
 		return err
 	}

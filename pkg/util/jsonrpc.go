@@ -31,11 +31,11 @@ import (
 
 // SpdkNode defines interface for SPDK storage node
 //
-// - Info returns node info(rpc url) for debugging purpose
-// - LvStores returns available volume stores(name, size, etc) on that node.
-// - VolumeInfo returns a string map to be passed to client node. Client node
-//   needs these info to mount the target. E.g, target IP, service port, nqn.
-// - Create/Delete/Publish/UnpublishVolume per CSI controller service spec.
+//   - Info returns node info(rpc url) for debugging purpose
+//   - LvStores returns available volume stores(name, size, etc) on that node.
+//   - VolumeInfo returns a string map to be passed to client node. Client node
+//     needs these info to mount the target. E.g, target IP, service port, nqn.
+//   - Create/Delete/Publish/UnpublishVolume per CSI controller service spec.
 //
 // NOTE: concurrency, idempotency, message ordering
 //
@@ -43,23 +43,26 @@ import (
 // and "caller" is the code uses the implementation.
 //
 // Concurrency requirements for implementation and caller:
-// - Implementation should make sure CreateVolume is thread safe. Caller is free
-//   to request creating multiple volumes in same volume store concurrently, no
-//   data race should happen.
-// - Implementation should make sure PublishVolume/UnpublishVolume/DeleteVolume
-//   for *different volumes* thread safe. Caller may issue these requests to
-//   *different volumes", in same volume store or not, concurrently.
-// - PublishVolume/UnpublishVolume/DeleteVolume for *same volume* is not thread
-//   safe, concurrent access may lead to data race. Caller must serialize these
-//   calls to *same volume*, possibly by mutex or message queue per volume.
-// - Implementation should make sure LvStores and VolumeInfo are thread safe,
-//   but it doesn't lock the returned resources. It means caller should adopt
-//   optimistic concurrency control and retry on specific failures.
-//   E.g, caller calls LvStores and finds a volume store with enough free space,
-//   it calls CreateVolume but fails with "not enough space" because another
-//   caller may issue similar request at same time. The failed caller may redo
-//   above steps(call LvStores, pick volume store, CreateVolume) under this
-//   condition, or it can simply fail.
+//   - Implementation should make sure CreateVolume is thread
+//     safe. Caller is free to request creating multiple volumes in
+//     same volume store concurrently, no data race should happen.
+//   - Implementation should make sure
+//     PublishVolume/UnpublishVolume/DeleteVolume for *different
+//     volumes* thread safe. Caller may issue these requests to
+//     *different volumes", in same volume store or not, concurrently.
+//   - PublishVolume/UnpublishVolume/DeleteVolume for *same volume* is
+//     not thread safe, concurrent access may lead to data
+//     race. Caller must serialize these calls to *same volume*,
+//     possibly by mutex or message queue per volume.
+//   - Implementation should make sure LvStores and VolumeInfo are
+//     thread safe, but it doesn't lock the returned resources. It
+//     means caller should adopt optimistic concurrency control and
+//     retry on specific failures.  E.g, caller calls LvStores and
+//     finds a volume store with enough free space, it calls
+//     CreateVolume but fails with "not enough space" because another
+//     caller may issue similar request at same time. The failed
+//     caller may redo above steps(call LvStores, pick volume store,
+//     CreateVolume) under this condition, or it can simply fail.
 //
 // Idempotent requirements for implementation:
 // Per CSI spec, it's possible that same request been sent multiple times due to
@@ -246,12 +249,12 @@ func (client *rpcClient) call(method string, args, result interface{}) error {
 		data, err = json.Marshal(requestWithParams)
 	}
 	if err != nil {
-		return fmt.Errorf("%s: %s", method, err)
+		return fmt.Errorf("%s: %w", method, err)
 	}
 
-	req, err := http.NewRequest("POST", client.rpcURL, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, client.rpcURL, bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("%s: %s", method, err)
+		return fmt.Errorf("%s: %w", method, err)
 	}
 
 	req.SetBasicAuth(client.rpcUser, client.rpcPass)
@@ -259,11 +262,11 @@ func (client *rpcClient) call(method string, args, result interface{}) error {
 
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %s", method, err)
+		return fmt.Errorf("%s: %w", method, err)
 	}
 
 	defer resp.Body.Close()
-
+	//nolint:usestdlibvars // >= 400 rather than >= http.StatusBadRequest
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("%s: HTTP error code: %d", method, resp.StatusCode)
 	}
@@ -281,7 +284,7 @@ func (client *rpcClient) call(method string, args, result interface{}) error {
 
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		return fmt.Errorf("%s: %s", method, err)
+		return fmt.Errorf("%s: %w", method, err)
 	}
 	if response.ID != id {
 		return fmt.Errorf("%s: json response ID mismatch", method)

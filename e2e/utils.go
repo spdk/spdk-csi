@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega" // nolint
+	. "github.com/onsi/gomega" //nolint
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -150,7 +150,7 @@ func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to wait for controller ready: %s", err)
+		return fmt.Errorf("failed to wait for controller ready: %w", err)
 	}
 	return nil
 }
@@ -167,7 +167,7 @@ func waitForNodeServerReady(c kubernetes.Interface, timeout time.Duration) error
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to wait for node server ready: %s", err)
+		return fmt.Errorf("failed to wait for node server ready: %w", err)
 	}
 	return nil
 }
@@ -184,7 +184,7 @@ func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to wait for test pod ready: %s", err)
+		return fmt.Errorf("failed to wait for test pod ready: %w", err)
 	}
 	return nil
 }

@@ -169,14 +169,14 @@ func (node *nodeNVMf) PublishVolume(lvolID string) error {
 
 	lvol.nsID, err = node.subsystemAddNs(lvol.nqn, lvolID)
 	if err != nil {
-		node.deleteSubsystem(lvol.nqn) // nolint:errcheck // we can do few
+		node.deleteSubsystem(lvol.nqn) //nolint:errcheck // we can do few
 		return err
 	}
 
 	err = node.subsystemAddListener(lvol.nqn)
 	if err != nil {
-		node.subsystemRemoveNs(lvol.nqn, lvol.nsID) // nolint:errcheck // ditto
-		node.deleteSubsystem(lvol.nqn)              // nolint:errcheck // ditto
+		node.subsystemRemoveNs(lvol.nqn, lvol.nsID) //nolint:errcheck // ditto
+		node.deleteSubsystem(lvol.nqn)              //nolint:errcheck // ditto
 		return err
 	}
 

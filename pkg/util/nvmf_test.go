@@ -41,6 +41,7 @@ func TestNVMeTCP(t *testing.T) {
 	testNVMeoF("nvme-tcp", t)
 }
 
+//nolint:cyclop // testNVMeoF exceeds cyclomatic complexity of 10
 func testNVMeoF(trType string, t *testing.T) {
 	nodeIx, err := NewSpdkNode(rpcURL, rpcUser, rpcPass, trType, trAddr)
 	if err != nil {

@@ -112,9 +112,6 @@ linters-settings:
     # put imports beginning with prefix after 3rd-party packages;
     # it's a comma-separated list of prefixes
     local-prefixes: github.com/spdk/spdk-csi
-  golint:
-    # minimal confidence for issues, default is 0.8
-    min-confidence: 0
   govet:
     # report about shadowed variables
     check-shadowing: true
@@ -124,9 +121,6 @@ linters-settings:
     line-length: 180
     # tab width in spaces. Default to 1.
     tab-width: 1
-  maligned:
-    # print struct with more effective memory layout or not, false by default
-    suggest-new: true
   misspell:
     # Correct spellings using locale preferences for US or UK.
     # Default is to use a neutral variety of English.
@@ -152,6 +146,10 @@ linters-settings:
   whitespace:
     multi-if: false     # Enforces newlines (or comments) after every multi-line if statement
     multi-func: false   # Enforces newlines (or comments) after every multi-line function signature
+  tagliatelle:
+    case:
+      rules:
+        json: snake
 
 # https://github.com/golangci/golangci-lint#supported-linters
 linters:
@@ -169,4 +167,28 @@ linters:
   - rowserrcheck
   - stylecheck
   - interfacer
+  - maligned # deprecated
+  - varcheck # deprecated
+  - deadcode # deprecated
+  - ifshort # deprecated
+  - exhaustivestruct # deprecated
+  - scopelint # deprecated
+  - structcheck # deprecated
+  - nosnakecase # deprecated
+  - golint # deprecated
+  - wrapcheck
+  - varnamelen
+  - gomoddirectives
+  - thelper
+  - testpackage
+  - paralleltest
+  - nonamedreturns
+  - nlreturn
+  - nilnil
+  - ireturn
+  - goerr113
+  - exhaustruct # enable to optimize structs for size
+  - gci
+  - noctx
+  - godot
   fast: false

@@ -28,6 +28,7 @@ const (
 	trAddrISCSI  = "127.0.0.1"
 )
 
+//nolint:cyclop // TestISCSI exceeds cyclomatic complexity of 10
 func TestISCSI(t *testing.T) {
 	nodeIx, err := NewSpdkNode(rpcURLISCSI, rpcUserISCSI, rpcPassISCSI, "ISCSI", trAddrISCSI)
 	if err != nil {

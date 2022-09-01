@@ -18,6 +18,7 @@ package spdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -98,7 +99,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	volumeInfo, err := publishVolume(volume)
 	if err != nil {
-		deleteVolume(volume) // nolint:errcheck // we can do little
+		deleteVolume(volume) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// copy volume info. node needs these info to contact target(ip, port, nqn, ...)
@@ -139,10 +140,10 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	// no harm if volume already unpublished
 	err := unpublishVolume(volume)
 	switch {
-	case err == util.ErrVolumeUnpublished:
+	case errors.Is(err, util.ErrVolumeUnpublished):
 		// unpublished but not deleted in last request?
 		klog.Warningf("volume not published: %s", volumeID)
-	case err == util.ErrVolumeDeleted:
+	case errors.Is(err, util.ErrVolumeDeleted):
 		// deleted in previous request?
 		klog.Warningf("volume already deleted: %s", volumeID)
 	case err != nil:
@@ -151,7 +152,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 	// no harm if volume already deleted
 	err = deleteVolume(volume)
-	if err == util.ErrJSONNoSuchDevice {
+	if errors.Is(err, util.ErrJSONNoSuchDevice) {
 		// deleted in previous request?
 		klog.Warningf("volume not exists: %s", volumeID)
 	} else if err != nil {
@@ -306,7 +307,7 @@ func publishVolume(volume *volume) (map[string]string, error) {
 
 	volumeInfo, err := volume.spdkNode.VolumeInfo(volume.csiVolume.GetVolumeId())
 	if err != nil {
-		unpublishVolume(volume) // nolint:errcheck // we can do little
+		unpublishVolume(volume) //nolint:errcheck // we can do little
 		return nil, err
 	}
 	return volumeInfo, nil
@@ -351,6 +352,7 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	}
 
 	// get spdk node configs, see deploy/kubernetes/config-map.yaml
+	//nolint:tagliatelle // not using json:snake case
 	var config struct {
 		Nodes []struct {
 			Name       string `json:"name"`
@@ -366,6 +368,7 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	}
 
 	// get spdk node secrets, see deploy/kubernetes/secret.yaml
+	//nolint:tagliatelle // not using json:snake case
 	var secret struct {
 		Tokens []struct {
 			Name     string `json:"name"`

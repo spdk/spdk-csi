@@ -31,11 +31,9 @@ const (
 	driverVersion = "0.1.0"
 )
 
-var (
-	conf = util.Config{
-		DriverVersion: driverVersion,
-	}
-)
+var conf = util.Config{
+	DriverVersion: driverVersion,
+}
 
 func init() {
 	flag.StringVar(&conf.DriverName, "drivername", driverName, "Name of the driver")

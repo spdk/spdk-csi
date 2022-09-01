@@ -91,7 +91,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		}
 		stagingPath, err := ns.stageVolume(devicePath, req) // idempotent
 		if err != nil {
-			volume.initiator.Disconnect() // nolint:errcheck // ignore error
+			volume.initiator.Disconnect() //nolint:errcheck // ignore error
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		volume.stagingPath = stagingPath
@@ -214,10 +214,14 @@ func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeReq
 	mntFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
 
 	switch req.VolumeCapability.AccessMode.Mode {
-	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 		mntFlags = append(mntFlags, "ro")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
 		return "", errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+	case csi.VolumeCapability_AccessMode_UNKNOWN:
 	}
 
 	klog.Infof("mount %s to %s, fstype: %s, flags: %v", devicePath, stagingPath, fsType, mntFlags)
@@ -252,7 +256,7 @@ func (ns *nodeServer) createMountPoint(path string) (bool, error) {
 	unmounted, err := mount.IsNotMountPoint(ns.mounter, path)
 	if os.IsNotExist(err) {
 		unmounted = true
-		err = os.MkdirAll(path, 0755)
+		err = os.MkdirAll(path, 0o755)
 	}
 	if !unmounted {
 		klog.Infof("%s already mounted", path)

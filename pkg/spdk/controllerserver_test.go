@@ -2,6 +2,7 @@ package spdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -205,7 +206,7 @@ func createConfigFiles(targetType string) error {
       ]
     }`
 	}
-	_, err = configFile.Write([]byte(config))
+	_, err = configFile.WriteString(config)
 	if err != nil {
 		os.Remove(configFile.Name())
 		return err
@@ -218,7 +219,7 @@ func createConfigFiles(targetType string) error {
 		return err
 	}
 	defer secretFile.Close()
-	// nolint:gosec // only for test
+	//nolint:gosec // only for test
 	secret := `
     {
       "rpcTokens": [
@@ -229,7 +230,7 @@ func createConfigFiles(targetType string) error {
         }
       ]
 	}`
-	_, err = secretFile.Write([]byte(secret))
+	_, err = secretFile.WriteString(secret)
 	if err != nil {
 		os.Remove(configFile.Name())
 		os.Remove(secretFile.Name())
@@ -281,7 +282,7 @@ func createSameVolumeInParallel(cs *controllerServer, name string, count int, si
 			defer wg.Done()
 			for {
 				resp, errLocal := cs.CreateVolume(context.TODO(), &reqCreate)
-				if errLocal == errVolumeInCreation {
+				if errors.Is(errLocal, errVolumeInCreation) {
 					continue
 				}
 				if errLocal != nil {

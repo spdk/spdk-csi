@@ -18,6 +18,7 @@ package util
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -28,13 +29,11 @@ import (
 )
 
 // SpdkCsiInitiator defines interface for NVMeoF/iSCSI initiator
-//
-// - Connect initiates target connection and returns local block device filename
-//   e.g., /dev/disk/by-id/nvme-SPDK_Controller1_SPDK00000000000001
-// - Disconnect terminates target connection
-//
-// - Caller(node service) should serialize calls to same initiator
-// - Implementation should be idempotent to duplicated requests
+//   - Connect initiates target connection and returns local block device filename
+//     e.g., /dev/disk/by-id/nvme-SPDK_Controller1_SPDK00000000000001
+//   - Disconnect terminates target connection
+//   - Caller(node service) should serialize calls to same initiator
+//   - Implementation should be idempotent to duplicated requests
 type SpdkCsiInitiator interface {
 	Connect() (string, error)
 	Disconnect() error
@@ -74,8 +73,10 @@ type initiatorNVMf struct {
 
 func (nvmf *initiatorNVMf) Connect() (string, error) {
 	// nvme connect -t tcp -a 192.168.1.100 -s 4420 -n "nqn"
-	cmdLine := []string{"nvme", "connect", "-t", strings.ToLower(nvmf.targetType),
-		"-a", nvmf.targetAddr, "-s", nvmf.targetPort, "-n", nvmf.nqn}
+	cmdLine := []string{
+		"nvme", "connect", "-t", strings.ToLower(nvmf.targetType),
+		"-a", nvmf.targetAddr, "-s", nvmf.targetPort, "-n", nvmf.nqn,
+	}
 	err := execWithTimeout(cmdLine, 40)
 	if err != nil {
 		// go on checking device status in case caused by duplicated request
@@ -182,10 +183,11 @@ func execWithTimeout(cmdLine []string, timeout int) error {
 	defer cancel()
 
 	klog.Infof("running command: %v", cmdLine)
+	//nolint:gosec // execWithTimeout assumes valid cmd arguments
 	cmd := exec.CommandContext(ctx, cmdLine[0], cmdLine[1:]...)
 	output, err := cmd.CombinedOutput()
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("timed out")
 	}
 	if output != nil {

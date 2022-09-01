@@ -17,7 +17,7 @@ OUT_DIR := ./_out
 # dir for tools: e.g., golangci-lint
 TOOL_DIR := $(OUT_DIR)/tool
 # use golangci-lint for static code check
-GOLANGCI_VERSION := v1.23.8
+GOLANGCI_VERSION := v1.49.0
 GOLANGCI_BIN := $(TOOL_DIR)/golangci-lint
 # go source, scripts
 SOURCE_DIRS := cmd pkg
