@@ -16,6 +16,11 @@ function check_os() {
     source /etc/os-release
     distro=${NAME,,}
 
+    if [[ "${distro}" == *"debian"* ]]; then
+        echo "Debian detected"
+        distro=ubuntu
+    fi
+
     if [ "${distro}" != "ubuntu" ] && [ "${distro}" != "fedora" ]; then
         echo "Only supports Ubuntu and Fedora now"
         exit 1
@@ -44,7 +49,7 @@ function check_os() {
 
 function install_packages_ubuntu() {
     apt-get update -y
-    apt-get install -y make gcc curl docker.io conntrack wget
+    apt-get install -y make gcc curl docker.io conntrack wget git-core
     systemctl start docker
     # install static check tools only on x86 agent
     if [ "$(arch)" == x86_64 ]; then
@@ -55,8 +60,7 @@ function install_packages_ubuntu() {
 
 function install_packages_fedora() {
     dnf check-update || true
-    dnf install -y make gcc curl conntrack bind-utils socat wget
-
+    dnf install -y make gcc curl conntrack bind-utils socat wget git-core
     if ! hash docker &> /dev/null; then
         dnf remove -y docker*
         dnf install -y dnf-plugins-core
@@ -87,6 +91,65 @@ function install_golang() {
     GOPKG=go${GOVERSION}.linux-${ARCH}.tar.gz
     curl -s https://dl.google.com/go/${GOPKG} | tar -C /usr/local -xzf -
     /usr/local/go/bin/go version
+}
+
+function setup_cri_dockerd() {
+    # use the cri-dockerd adapter to integrate Docker Engine with Kubernetes 1.24 or higher version
+    STATUS="$(systemctl is-active tomcat.service)"
+    if [ "${STATUS}" == "active" ]; then
+        cri_dockerd_info="cri_docker is already active, cri_dockerd setup skipped"
+        return
+    fi
+
+    echo "=============== setting up cri_dockerd ==============="
+    ARCH=$(arch)
+    if [[ "$(arch)" == "x86_64" ]]; then
+        ARCH="amd64"
+    elif [[ "$(arch)" == "aarch64" ]]; then
+        ARCH="arm64"
+    else
+        echo "${ARCH} is not supported"
+        exit 1
+    fi
+
+    echo "=== downloading cri_dockerd-${CRIDOCKERD_VERSION}"
+    wget -qO- https://github.com/Mirantis/cri-dockerd/releases/download/v"${CRIDOCKERD_VERSION}"/cri-dockerd-"${CRIDOCKERD_VERSION}"."${ARCH}".tgz | tar xvz -C /tmp
+    wget -P /tmp https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service
+    wget -P /tmp/ https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket
+    sudo mv /tmp/cri-dockerd/cri-dockerd /usr/local/bin/
+    sudo mv /tmp/cri-docker.service /etc/systemd/system/
+    sudo mv /tmp/cri-docker.socket /etc/systemd/system/
+
+    # start cri-docker service
+    sudo sed -i -e 's,/usr/bin/cri-dockerd,/usr/local/bin/cri-dockerd,' /etc/systemd/system/cri-docker.service
+    systemctl daemon-reload
+    systemctl enable cri-docker.service
+    systemctl enable --now cri-docker.socket
+
+    echo "=== downloading crictl-${CRIDOCKERD_VERSION}"
+    wget -qO- https://github.com/kubernetes-sigs/cri-tools/releases/download/"${KUBE_VERSION}"/crictl-"${KUBE_VERSION}"-linux-"${ARCH}".tar.gz | tar xvz -C /tmp
+    sudo mv /tmp/crictl /usr/local/bin/
+}
+
+function setup_cni_networking() {
+    echo "=============== setting up CNI networking ==============="
+    ARCH=$(arch)
+    if [[ "$(arch)" == "x86_64" ]]; then
+        ARCH="amd64"
+    elif [[ "$(arch)" == "aarch64" ]]; then
+        ARCH="arm64"
+    else
+        echo "${ARCH} is not supported"
+        exit 1
+    fi
+
+    echo "=== downloading 10-crio-bridge.conf and CNI plugins"
+    wget -P /tmp https://raw.githubusercontent.com/cri-o/cri-o/main/contrib/cni/10-crio-bridge.conf
+    mkdir -p /tmp/plugins
+    wget -qO- https://github.com/containernetworking/plugins/releases/download/"${CNIPLUGIN_VERSION}"/cni-plugins-linux-"${ARCH}"-"${CNIPLUGIN_VERSION}".tgz | tar xvz -C /tmp/plugins
+    sudo mv /tmp/10-crio-bridge.conf /etc/cni/net.d/
+    sudo mkdir -p /opt/cni/bin
+    sudo mv /tmp/plugins/* /opt/cni/bin/
 }
 
 function build_spdkimage() {
@@ -178,9 +241,12 @@ install_packages_"${distro}"
 install_golang
 configure_proxy
 [ "${distro}" == "fedora" ] && configure_system_fedora
+setup_cri_dockerd
+setup_cni_networking
 docker_login
 build_spdkimage
 
 echo "========================================================"
 [ -n "${golang_info}" ] && echo "INFO: ${golang_info}"
+[ -n "${cri_dockerd_info}" ] && echo "INFO: ${cri_dockerd_info}"
 [ -n "${spdkimage_info}" ] && echo "INFO: ${spdkimage_info}"
