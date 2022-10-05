@@ -10,7 +10,7 @@ Please see [SPDK CSI Design Document](https://docs.google.com/document/d/1aLi6Sk
 
 ## Supported platforms
 
-This plugin conforms to [CSI Spec v1.1.0](https://github.com/container-storage-interface/spec/blob/v1.1.0/spec.md). It is currently developed and tested only on Kubernetes.
+This plugin conforms to [CSI Spec v1.6.0](https://github.com/container-storage-interface/spec/blob/v1.6.0/spec.md). It is currently developed and tested only on Kubernetes.
 
 This plugin supports `x86_64` and `Arm64` architectures.
 
@@ -20,9 +20,9 @@ Status: **Beta**
 
 ## Prerequisites
 
-SPDK-CSI is currently developed and tested with `Go 1.19`, `Docker 19.03` and `Kubernetes 1.19.3` on `Ubuntu 18.04`.
+SPDK-CSI is currently developed and tested with `Go 1.19`, `Docker 20.10` and `Kubernetes 1.25.0` on `Ubuntu 22.04`.
 
-Minimal requirement: Go 1.19+, Docker 18.03+ and Kubernetes 1.13+(supports CSI spec 1.0).
+Minimal requirement: Go 1.19+, Docker 18.03+ and Kubernetes 1.13+.
 
 ## Setup
 
@@ -96,8 +96,8 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
   $ cd scripts
   $ sudo ./minikube.sh up
 
-  # Create kubectl shortcut (assume kubectl version 1.19.3)
-  $ sudo ln -s /var/lib/minikube/binaries/v1.19.3/kubectl /usr/local/bin/kubectl
+  # Create kubectl shortcut (assume kubectl version 1.25.0)
+  $ sudo ln -s /var/lib/minikube/binaries/v1.25.0/kubectl /usr/local/bin/kubectl
 
   # Wait for Kubernetes ready
   $ kubectl get pods --all-namespaces

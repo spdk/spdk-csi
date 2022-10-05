@@ -23,9 +23,9 @@ import (
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/klog"
 
 	csicommon "github.com/spdk/spdk-csi/pkg/csi-common"
@@ -189,6 +189,21 @@ func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 	}, nil
 }
 
+func (cs *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+
+	cs.mtx.Lock()
+	volume, exists := cs.volumes[volumeID]
+	cs.mtx.Unlock()
+	if !exists {
+		errMsg := fmt.Sprintf("volume does not exist: %s", volumeID)
+		klog.Warningf(errMsg)
+		return &csi.ControllerGetVolumeResponse{}, status.Error(codes.NotFound, errMsg)
+	}
+
+	return &csi.ControllerGetVolumeResponse{Volume: &volume.csiVolume}, nil
+}
+
 func (cs *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
 	lvolID := req.GetSourceVolumeId()
 	snapshotName := req.GetName()
@@ -218,7 +233,7 @@ func (cs *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateS
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	creationTime := ptypes.TimestampNow()
+	creationTime := timestamppb.Now()
 	snapshotData := csi.Snapshot{
 		SizeBytes:      volume.csiVolume.GetCapacityBytes(),
 		SnapshotId:     snapshotID,

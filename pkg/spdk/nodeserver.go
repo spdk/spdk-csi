@@ -200,6 +200,8 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 }
 
 // must be idempotent
+//
+//nolint:cyclop // many cases in switch increases complexity
 func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeRequest) (string, error) {
 	stagingPath := req.GetStagingTargetPath() + "/" + req.GetVolumeId()
 	mounted, err := ns.createMountPoint(stagingPath)
@@ -220,6 +222,8 @@ func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeReq
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
 		return "", errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
 	case csi.VolumeCapability_AccessMode_UNKNOWN:
 	}
