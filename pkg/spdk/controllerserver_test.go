@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -174,7 +173,7 @@ func createTestController(targetType string) (cs *controllerServer, lvss [][]uti
 }
 
 func createConfigFiles(targetType string) error {
-	configFile, err := ioutil.TempFile("", "spdkcsi-config*.json")
+	configFile, err := os.CreateTemp("", "spdkcsi-config*.json")
 	if err != nil {
 		return err
 	}
@@ -213,7 +212,7 @@ func createConfigFiles(targetType string) error {
 	}
 	os.Setenv("SPDKCSI_CONFIG", configFile.Name())
 
-	secretFile, err := ioutil.TempFile("", "spdkcsi-secret*.json")
+	secretFile, err := os.CreateTemp("", "spdkcsi-secret*.json")
 	if err != nil {
 		os.Remove(configFile.Name())
 		return err

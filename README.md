@@ -20,9 +20,9 @@ Status: **Beta**
 
 ## Prerequisites
 
-SPDK-CSI is currently developed and tested with `Go 1.14`, `Docker 19.03` and `Kubernetes 1.19.3` on `Ubuntu 18.04`.
+SPDK-CSI is currently developed and tested with `Go 1.19`, `Docker 19.03` and `Kubernetes 1.19.3` on `Ubuntu 18.04`.
 
-Minimal requirement: Go 1.12+(supports Go module), Docker 18.03+ and Kubernetes 1.13+(supports CSI spec 1.0).
+Minimal requirement: Go 1.19+, Docker 18.03+ and Kubernetes 1.13+(supports CSI spec 1.0).
 
 ## Setup
 
