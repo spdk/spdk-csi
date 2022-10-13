@@ -167,15 +167,15 @@ linters:
   - rowserrcheck
   - stylecheck
   - interfacer
-  - maligned # deprecated
-  - varcheck # deprecated
-  - deadcode # deprecated
-  - ifshort # deprecated
-  - exhaustivestruct # deprecated
-  - scopelint # deprecated
-  - structcheck # deprecated
-  - nosnakecase # deprecated
-  - golint # deprecated
+  - maligned          # deprecated
+  - varcheck          # deprecated
+  - deadcode          # deprecated
+  - ifshort           # deprecated
+  - exhaustivestruct  # deprecated
+  - scopelint         # deprecated
+  - structcheck       # deprecated
+  - nosnakecase       # deprecated
+  - golint            # deprecated
   - wrapcheck
   - varnamelen
   - gomoddirectives
@@ -187,7 +187,7 @@ linters:
   - nilnil
   - ireturn
   - goerr113
-  - exhaustruct # enable to optimize structs for size
+  - exhaustruct       # enable to optimize structs for size
   - gci
   - noctx
   - godot
