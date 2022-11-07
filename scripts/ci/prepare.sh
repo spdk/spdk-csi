@@ -16,6 +16,15 @@ function check_os() {
     source /etc/os-release
     distro=${NAME,,}
 
+    if [[ "${distro}" == "fedora"* ]]; then
+        distro="fedora"
+    fi
+
+    if [[ "${distro}" == "debian"* ]]; then
+        echo "Warning: Debian is not officially supported, using Ubuntu setup"
+        distro="ubuntu"
+    fi
+
     if [ "${distro}" != "ubuntu" ] && [ "${distro}" != "fedora" ]; then
         echo "Only supports Ubuntu and Fedora now"
         exit 1
