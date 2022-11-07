@@ -51,6 +51,22 @@ function check_os() {
     fi
 }
 
+function allocate_hugepages() {
+    local HUGEPAGES_MIN=1024
+    local NR_HUGEPAGES=/proc/sys/vm/nr_hugepages
+    if [[ -f ${NR_HUGEPAGES} ]]; then
+        if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
+            echo ${HUGEPAGES_MIN} > ${NR_HUGEPAGES} || true
+        fi
+        echo "/proc/sys/vm/nr_hugepages: $(< ${NR_HUGEPAGES})"
+        if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
+            echo allocating ${HUGEPAGES_MIN} hugepages failed
+            exit 1
+        fi
+    fi
+    cat /proc/meminfo
+}
+
 function install_packages_ubuntu() {
     apt-get update -y
     apt-get install -y make gcc curl docker.io conntrack wget
@@ -196,6 +212,7 @@ fi
 
 export_proxy
 check_os
+allocate_hugepages
 install_packages_"${distro}"
 install_golang
 configure_proxy

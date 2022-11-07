@@ -29,6 +29,7 @@ function prepare_spdk() {
     echo "======== start spdk target ========"
     # allocate 1024*2M hugepage
     sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages'
+    grep Huge /proc/meminfo
     # start spdk target
     sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm ${SPDKIMAGE} /root/spdk/build/bin/spdk_tgt
     sleep 20s
