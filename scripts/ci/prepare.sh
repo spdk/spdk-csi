@@ -155,6 +155,21 @@ EOF
     systemctl restart docker
 }
 
+function stop_host_iscsid() {
+    local STATUS
+    STATUS="$(systemctl is-enabled iscsid.service >&/dev/null || true)"
+    if [ "${STATUS}" == "enabled" ]; then
+        systemctl disable iscsid.service
+        systemctl disable iscsid.socket
+    fi
+
+    STATUS="$(systemctl is-active iscsid.service >&/dev/null || true)"
+    if [ "${STATUS}" == "active" ]; then
+        systemctl stop iscsid.service
+        systemctl stop iscsid.socket
+    fi
+}
+
 function configure_system_fedora() {
     # Make life easier and set SE Linux to Permissive if it's
     # not already disabled.
@@ -217,6 +232,7 @@ install_packages_"${distro}"
 install_golang
 configure_proxy
 [ "${distro}" == "fedora" ] && configure_system_fedora
+stop_host_iscsid
 docker_login
 build_spdkimage
 
