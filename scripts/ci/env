@@ -7,5 +7,7 @@ JSONRPC_PORT=9009
 JSONRPC_USER=spdkcsiuser
 JSONRPC_PASS=spdkcsipass
 
+DOCKER_MIRROR=mirror.gcr.io
+
 # source code root directory
 ROOTDIR="${DIR}/../.."

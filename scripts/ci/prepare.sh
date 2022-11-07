@@ -106,6 +106,19 @@ function build_spdkimage() {
 }
 
 function configure_proxy() {
+    if [ -n "${DOCKER_MIRROR}" ]; then
+        mkdir -p /etc/docker
+        cat <<EOF > /etc/docker/daemon.json
+{
+  "insecure-registries": [
+    "${DOCKER_MIRROR}"
+  ],
+  "registry-mirrors": [
+    "https://${DOCKER_MIRROR}"
+  ]
+}
+EOF
+    fi
     mkdir -p /etc/systemd/system/docker.service.d
     cat <<- EOF > /etc/systemd/system/docker.service.d/http-proxy.conf
 [Service]
