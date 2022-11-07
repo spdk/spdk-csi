@@ -105,6 +105,7 @@ function install_golang() {
         return
     fi
     echo "=============== installing golang ==============="
+    local ARCH
     ARCH=amd64
     if [ "$(arch)" == "aarch64" ]; then
         ARCH=arm64
@@ -112,6 +113,69 @@ function install_golang() {
     GOPKG=go${GOVERSION}.linux-${ARCH}.tar.gz
     curl -s https://dl.google.com/go/${GOPKG} | tar -C /usr/local -xzf -
     /usr/local/go/bin/go version
+}
+
+function setup_cri_dockerd() {
+    # use the cri-dockerd adapter to integrate Docker Engine with Kubernetes 1.24 or higher version
+    local STATUS
+    STATUS="$(systemctl is-active cri-docker.service || true)"
+    if [ "${STATUS}" == "active" ]; then
+        cri_dockerd_info="cri-docker is already active, cri-dockerd setup skipped"
+        return
+    fi
+
+    echo "=============== setting up cri-dockerd ==============="
+    local ARCH
+    ARCH=$(arch)
+    if [[ "$(arch)" == "x86_64" ]]; then
+        ARCH="amd64"
+    elif [[ "$(arch)" == "aarch64" ]]; then
+        ARCH="arm64"
+    else
+        echo "${ARCH} is not supported"
+        exit 1
+    fi
+
+    echo "=== downloading cri-dockerd-${CRIDOCKERD_VERSION}"
+    wget -qO- https://github.com/Mirantis/cri-dockerd/releases/download/v"${CRIDOCKERD_VERSION}"/cri-dockerd-"${CRIDOCKERD_VERSION}"."${ARCH}".tgz | tar xvz -C /tmp
+    wget -P /tmp https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service
+    wget -P /tmp/ https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket
+    mv /tmp/cri-dockerd/cri-dockerd /usr/local/bin/
+    mv /tmp/cri-docker.service /etc/systemd/system/
+    mv /tmp/cri-docker.socket /etc/systemd/system/
+
+    # start cri-docker service
+    sed -i -e 's,/usr/bin/cri-dockerd,/usr/local/bin/cri-dockerd,' /etc/systemd/system/cri-docker.service
+    systemctl daemon-reload
+    systemctl enable cri-docker.service
+    systemctl enable --now cri-docker.socket
+
+    echo "=== downloading crictl-${CRITOOLS_VERSION}"
+    wget -qO- https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRITOOLS_VERSION}/crictl-${CRITOOLS_VERSION}-linux-"${ARCH}".tar.gz | tar xvz -C /tmp
+    mv /tmp/crictl /usr/local/bin/
+}
+
+function setup_cni_networking() {
+    echo "=============== setting up CNI networking ==============="
+    local ARCH
+    ARCH=$(arch)
+    if [[ "$(arch)" == "x86_64" ]]; then
+        ARCH="amd64"
+    elif [[ "$(arch)" == "aarch64" ]]; then
+        ARCH="arm64"
+    else
+        echo "${ARCH} is not supported"
+        exit 1
+    fi
+
+    echo "=== downloading 10-crio-bridge.conf and CNI plugins"
+    wget -P /tmp https://raw.githubusercontent.com/cri-o/cri-o/main/contrib/cni/10-crio-bridge.conf
+    mkdir -p /tmp/plugins
+    mkdir -p /etc/cni/net.d
+    wget -qO- https://github.com/containernetworking/plugins/releases/download/"${CNIPLUGIN_VERSION}"/cni-plugins-linux-"${ARCH}"-"${CNIPLUGIN_VERSION}".tgz | tar xvz -C /tmp/plugins
+    mv /tmp/10-crio-bridge.conf /etc/cni/net.d/
+    mkdir -p /opt/cni/bin
+    mv /tmp/plugins/* /opt/cni/bin/
 }
 
 function build_spdkimage() {
@@ -153,6 +217,7 @@ Environment="NO_PROXY=$NO_PROXY"
 EOF
     systemctl daemon-reload
     systemctl restart docker
+    sed -e "s:^\(no_proxy\)=.*:\1=${NO_PROXY}:gI" -i /etc/environment
 }
 
 function stop_host_iscsid() {
@@ -232,10 +297,16 @@ install_packages_"${distro}"
 install_golang
 configure_proxy
 [ "${distro}" == "fedora" ] && configure_system_fedora
+setup_cri_dockerd
+setup_cni_networking
 stop_host_iscsid
 docker_login
 build_spdkimage
 
+# workaround minikube permissions issues when running as root in ci(-like) env
+sysctl fs.protected_regular=0
+
 echo "========================================================"
 [ -n "${golang_info}" ] && echo "INFO: ${golang_info}"
+[ -n "${cri_dockerd_info}" ] && echo "INFO: ${cri_dockerd_info}"
 [ -n "${spdkimage_info}" ] && echo "INFO: ${spdkimage_info}"

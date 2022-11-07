@@ -13,6 +13,6 @@ function export_proxy() {
         export "$(sed "s/.*=/\U&/" <<< "$proxy")"
     done
 
-    export no_proxy="$no_proxy,127.0.0.1,localhost,10.96.0.0/12,192.168.0.0/16"
-    export NO_PROXY="$NO_PROXY,127.0.0.1,localhost,10.96.0.0/12,192.168.0.0/16"
+    export NO_PROXY="$NO_PROXY,127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16,.internal"
+    export no_proxy="$no_proxy,127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16,.internal"
 }
