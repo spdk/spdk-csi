@@ -42,7 +42,7 @@ all: spdkcsi lint test
 .PHONY: spdkcsi
 spdkcsi:
 	@echo === building spdkcsi binary
-	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -o $(OUT_DIR)/spdkcsi ./cmd/
+	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -buildvcs=false -o $(OUT_DIR)/spdkcsi ./cmd/
 
 # static code check, text lint
 lint: golangci yamllint shellcheck
