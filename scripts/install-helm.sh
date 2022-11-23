@@ -42,7 +42,7 @@ install_spdkcsi_helm_charts() {
         NAMESPACE="default"
     fi
     # install spdk-csi-spdkfs and spdk-csi-rbd charts
-    "${HELM}" install --namespace ${NAMESPACE} ${SPDKCSI_CHART_NAME} "${SCRIPT_DIR}"/../charts/spdk-csi
+    "${HELM}" install --debug --namespace ${NAMESPACE} ${SPDKCSI_CHART_NAME} "${SCRIPT_DIR}"/../charts/spdk-csi
 
     check_deployment_status spdkdev ${NAMESPACE}
     check_daemonset_status spdkcsi-node ${NAMESPACE}
@@ -68,8 +68,7 @@ function check_deployment_status() {
     done
 
     if [ "$retry" -gt "$DEPLOY_TIMEOUT" ]; then
-        echo "[Timeout] Failed to get deployment"
-        exit 1
+        exit_with_details "[Timeout] Failed to get deployment" "${NAMESPACE}"
     fi
 }
 
@@ -92,8 +91,7 @@ function check_statefulset_status() {
     done
 
     if [ "$retry" -gt "$DEPLOY_TIMEOUT" ]; then
-        echo "[Timeout] Failed to get statefulset"
-        exit 1
+        exit_with_details "[Timeout] Failed to get statefulset" "${NAMESPACE}"
     fi
 }
 
@@ -117,8 +115,7 @@ function check_daemonset_status() {
     done
 
     if [ "$retry" -gt "$DEPLOY_TIMEOUT" ]; then
-        echo "[Timeout] Failed to get daemonset"
-        exit 1
+        exit_with_details "[Timeout] Failed to get daemonset" "${NAMESPACE}"
     fi
 }
 
@@ -127,12 +124,30 @@ cleanup_spdkcsi_helm_charts() {
     if [ -z "$NAMESPACE" ]; then
         NAMESPACE="default"
     fi
-    "${HELM}" uninstall ${SPDKCSI_CHART_NAME} --namespace ${NAMESPACE}
+    "${HELM}" uninstall --debug ${SPDKCSI_CHART_NAME} --namespace ${NAMESPACE}
 }
 
 helm_reset() {
     # shellcheck disable=SC2021
     rm -rf "${TEMP}"
+}
+
+function exit_with_details() {
+    local ERRORMSG=$1
+    local NAMESPACE=$2
+    echo "$ERRORMSG"
+    if [ -n "$NAMESPACE" ]; then
+        echo "=========== pods details in $NAMESPACE ============"
+        kubectl get pods -n "$NAMESPACE" -o yaml
+
+        echo "=========== pods logs in $NAMESPACE ==============="
+        for p in $(kubectl get pods -o name | grep spdk); do
+            echo "pod: $p"
+            kubectl logs "$p" --all-containers --tail 200
+            echo "===================================================="
+        done
+    fi
+    exit 1
 }
 
 if [ -z "${arch}" ]; then
