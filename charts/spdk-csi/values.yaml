@@ -69,3 +69,5 @@ spdkdevCreateCommonds:
   ./rpc.py bdev_malloc_create -b Malloc0 1024 4096 &&
   ./rpc.py bdev_lvol_create_lvstore Malloc0 lvs0 &&
   ./rpc_http_proxy.py 127.0.0.1 9009 spdkcsiuser spdkcsipass
+
+driverName: csi.spdk.io

@@ -19,6 +19,7 @@ const (
 
 	// deployment yaml files
 	yamlDir            = "../deploy/kubernetes/"
+	driverPath         = yamlDir + "driver.yaml"
 	secretPath         = yamlDir + "secret.yaml"
 	controllerRbacPath = yamlDir + "controller-rbac.yaml"
 	nodeRbacPath       = yamlDir + "node-rbac.yaml"
@@ -59,49 +60,33 @@ func deleteConfigs() {
 	}
 }
 
+var csiYamls = []string{
+	driverPath,
+	controllerRbacPath,
+	nodeRbacPath,
+	controllerPath,
+	nodePath,
+	storageClassPath,
+}
+
 func deployCsi() {
-	_, err := framework.RunKubectl(nameSpace, "apply", "-f", controllerRbacPath)
-	if err != nil {
-		e2elog.Logf("failed to create controller rbac: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "apply", "-f", nodeRbacPath)
-	if err != nil {
-		e2elog.Logf("failed to create node rbac: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "apply", "-f", controllerPath)
-	if err != nil {
-		e2elog.Logf("failed to create controller service: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "apply", "-f", nodePath)
-	if err != nil {
-		e2elog.Logf("failed to create node service: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "apply", "-f", storageClassPath)
-	if err != nil {
-		e2elog.Logf("failed to create storageclass: %s", err)
+	for _, yamlName := range csiYamls {
+		_, err := framework.RunKubectl(nameSpace, "apply", "-f", yamlName)
+		if err != nil {
+			e2elog.Logf("failed to create %s: %s", yamlName, err)
+		}
 	}
 }
 
 func deleteCsi() {
-	_, err := framework.RunKubectl(nameSpace, "delete", "-f", storageClassPath)
-	if err != nil {
-		e2elog.Logf("failed to delete storageclass: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "delete", "-f", nodePath)
-	if err != nil {
-		e2elog.Logf("failed to delete node service: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "delete", "-f", controllerPath)
-	if err != nil {
-		e2elog.Logf("failed to delete controller service: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "delete", "-f", nodeRbacPath)
-	if err != nil {
-		e2elog.Logf("failed to delete node rbac: %s", err)
-	}
-	_, err = framework.RunKubectl(nameSpace, "delete", "-f", controllerRbacPath)
-	if err != nil {
-		e2elog.Logf("failed to delete controller rbac: %s", err)
+	cnt := len(csiYamls)
+	// delete objects in reverse order
+	for i := range csiYamls {
+		yamlName := csiYamls[cnt-1-i]
+		_, err := framework.RunKubectl(nameSpace, "delete", "-f", yamlName)
+		if err != nil {
+			e2elog.Logf("failed to delete %s: %s", yamlName, err)
+		}
 	}
 }
 

@@ -76,6 +76,7 @@ Example deployment files can be found in deploy/kubernetes directory.
 | config-map.yaml      | SPDK storage cluster configurations        |
 | secret.yaml          | SPDK storage cluster access tokens         |
 | snapshotclass.yaml   | SnapshotClass of provisioner "csi.spdk.io" |
+| driver.yaml          | CSIDriver object                           |
 
 ---
 **_NOTE:_**
