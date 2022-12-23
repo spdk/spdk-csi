@@ -169,7 +169,7 @@ function setup_cni_networking() {
     fi
 
     echo "=== downloading 10-crio-bridge.conf and CNI plugins"
-    wget -P /tmp https://raw.githubusercontent.com/cri-o/cri-o/main/contrib/cni/10-crio-bridge.conf
+    wget -P /tmp https://raw.githubusercontent.com/cri-o/cri-o/v1.23.4/contrib/cni/10-crio-bridge.conf
     mkdir -p /tmp/plugins
     mkdir -p /etc/cni/net.d
     wget -qO- https://github.com/containernetworking/plugins/releases/download/"${CNIPLUGIN_VERSION}"/cni-plugins-linux-"${ARCH}"-"${CNIPLUGIN_VERSION}".tgz | tar xvz -C /tmp/plugins
