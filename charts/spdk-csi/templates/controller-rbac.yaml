@@ -58,7 +58,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: spdkcsi-controller-sa
-  namespace: default
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: spdkcsi-provisioner-role
@@ -95,7 +95,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: spdkcsi-controller-sa
-  namespace: default
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: spdkcsi-attacher-role
