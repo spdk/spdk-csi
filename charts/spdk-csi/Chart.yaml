@@ -6,7 +6,7 @@ apiVersion: v1
 appVersion: latest
 description: CSI SPDK Driver for Kubernetes
 name: spdk-csi
-version: latest
+version: 0.1
 keywords:
 - spdk
 - csi
