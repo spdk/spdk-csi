@@ -46,6 +46,8 @@ func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.St
 		volumeContext: volumeContext,
 		timeout:       60 * time.Second,
 	}
+	_ = iSmaCommon.tryGetDeviceHandle() //nolint:errcheck // no need to check
+
 	switch smaTargetType {
 	case "xpu-sma-nvmftcp":
 		return &smainitiatorNvmfTCP{sma: iSmaCommon}, nil
@@ -100,6 +102,28 @@ func (sma *smaCommon) ctxTimeout() (context.Context, context.CancelFunc) {
 	return ctxTimeout, cancel
 }
 
+func (sma *smaCommon) saveDeviceHandle(deviceHandle string) error {
+	sma.deviceHandle = deviceHandle
+
+	err := StashSMAContext(
+		map[string]string{"deviceHandle": sma.deviceHandle},
+		sma.volumeContext["stagingParentPath"],
+	)
+	if err != nil {
+		return fmt.Errorf("saveDeviceHandle() error: %w", err)
+	}
+	return nil
+}
+
+func (sma *smaCommon) tryGetDeviceHandle() error {
+	smaContext, err := LookupSMAContext(sma.volumeContext["stagingParentPath"])
+	if err != nil {
+		return fmt.Errorf("loadDeviceHandle() error: %w", err)
+	}
+	sma.deviceHandle = smaContext["deviceHandle"]
+	return nil
+}
+
 func (sma *smaCommon) CreateDevice(client smarpc.StorageManagementAgentClient, req *smarpc.CreateDeviceRequest) error {
 	ctxTimeout, cancel := sma.ctxTimeout()
 	defer cancel()
@@ -117,8 +141,10 @@ func (sma *smaCommon) CreateDevice(client smarpc.StorageManagementAgentClient, r
 	if response.Handle == "" {
 		return fmt.Errorf("SMA.CreateDevice(%s) error: no device handle in response", req)
 	}
-	sma.deviceHandle = response.Handle
-
+	err = sma.saveDeviceHandle(response.Handle)
+	if err != nil {
+		return fmt.Errorf("SMA.CreateDevice(%s) error: save device handle,%w", req, err)
+	}
 	return nil
 }
 
@@ -173,7 +199,7 @@ func (sma *smaCommon) DeleteDevice(client smarpc.StorageManagementAgentClient, r
 		return fmt.Errorf("SMA.DeleteDevice(%s) error: nil response", req)
 	}
 	sma.deviceHandle = ""
-
+	_ = CleanUpSMAContext(sma.volumeContext["stagingParentPath"]) //nolint:errcheck // no need to check
 	return nil
 }
 

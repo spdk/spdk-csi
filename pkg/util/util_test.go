@@ -18,6 +18,7 @@ limitations under the License.
 package util_test
 
 import (
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -63,5 +64,44 @@ func TestTryLockConcurrent(t *testing.T) {
 
 	if lockCount != 1 {
 		t.Fatal("concurrency test failed")
+	}
+}
+
+func TestVolumeContext(t *testing.T) {
+	volumeContextFileName := "volumeContext.json"
+
+	dir, err := os.MkdirTemp("", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	volumeContext := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+	}
+
+	err = util.StashVolumeContext(volumeContext, dir)
+	if err != nil {
+		t.Fatalf("StashVolumeContext returned error: %v", err)
+	}
+
+	returnedContext, err := util.LookupVolumeContext(dir)
+	if err != nil {
+		t.Fatalf("LookupVolumeContext returned error: %v", err)
+	}
+
+	if volumeContext["key1"] != returnedContext["key1"] || volumeContext["key2"] != returnedContext["key2"] {
+		t.Fatalf("LookupVolumeContext returned unexpected value: got %v, want %v", returnedContext, volumeContext)
+	}
+
+	err = util.CleanUpVolumeContext(dir)
+	if err != nil {
+		t.Fatalf("CleanUpVolumeContext returned error: %v", err)
+	}
+
+	_, err = os.Stat(dir + "/" + volumeContextFileName)
+	if !os.IsNotExist(err) {
+		t.Fatalf("CleanUpVolumeContext failed to cleanup volume context stash")
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -43,24 +42,17 @@ import (
 type nodeServer struct {
 	*csicommon.DefaultNodeServer
 	mounter       mount.Interface
-	volumes       map[string]*nodeVolume
-	mtx           sync.Mutex // protect volumes map
+	volumeLocks   *util.VolumeLocks
 	smaClient     smarpc.StorageManagementAgentClient
 	smaTargetType string
 	kvmPciBridges int
-}
-
-type nodeVolume struct {
-	initiator   util.SpdkCsiInitiator
-	stagingPath string
-	tryLock     util.TryLock
 }
 
 func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 	ns := &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
 		mounter:           mount.New(""),
-		volumes:           make(map[string]*nodeVolume),
+		volumeLocks:       util.NewVolumeLocks(),
 	}
 
 	// get spdk sma configs, see deploy/kubernetes/nodeserver-config-map.yaml
@@ -136,140 +128,135 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 }
 
 func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	volume, err := func() (*nodeVolume, error) {
-		volumeID := req.GetVolumeId()
-		ns.mtx.Lock()
-		defer ns.mtx.Unlock()
+	volumeID := req.GetVolumeId()
+	unlock := ns.volumeLocks.Lock(volumeID)
+	defer unlock()
 
-		volume, exists := ns.volumes[volumeID]
-		if !exists {
-			var initiator util.SpdkCsiInitiator
-			var err error
-			if ns.smaClient != nil && ns.smaTargetType != "" {
-				initiator, err = util.NewSpdkCsiSmaInitiator(req.GetVolumeContext(), ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
-			} else {
-				initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
-			}
-			if err != nil {
-				return nil, err
-			}
-			volume = &nodeVolume{
-				initiator:   initiator,
-				stagingPath: "",
-			}
-			ns.volumes[volumeID] = volume
-		}
-		return volume, nil
-	}()
+	stagingParentPath := req.GetStagingTargetPath() // use this directory to persistently store VolumeContext
+	stagingTargetPath := getStagingTargetPath(req)
+
+	isStaged, err := ns.isStaged(stagingTargetPath)
 	if err != nil {
+		klog.Errorf("check isStaged error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if isStaged {
+		klog.Warning("volume already staged")
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+
+	var initiator util.SpdkCsiInitiator
+	if ns.smaClient != nil && ns.smaTargetType != "" {
+		vc := req.GetVolumeContext()
+		vc["stagingParentPath"] = stagingParentPath
+		initiator, err = util.NewSpdkCsiSmaInitiator(vc, ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
+	} else {
+		initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
+	}
+	if err != nil {
+		klog.Errorf("create spdk initiator error: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if volume.tryLock.Lock() {
-		defer volume.tryLock.Unlock()
-
-		if volume.stagingPath != "" {
-			klog.Warning("volume already staged")
-			return &csi.NodeStageVolumeResponse{}, nil
-		}
-		devicePath, err := volume.initiator.Connect() // idempotent
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		stagingPath, err := ns.stageVolume(devicePath, req) // idempotent
-		if err != nil {
-			volume.initiator.Disconnect() //nolint:errcheck // ignore error
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		volume.stagingPath = stagingPath
-		return &csi.NodeStageVolumeResponse{}, nil
+	devicePath, err := initiator.Connect() // idempotent
+	if err != nil {
+		klog.Errorf("connect initiator error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return nil, status.Error(codes.Aborted, "concurrent request ongoing")
+	defer func() {
+		if err != nil {
+			initiator.Disconnect() //nolint:errcheck // ignore error
+		}
+	}()
+	if err = ns.stageVolume(devicePath, stagingTargetPath, req); err != nil { // idempotent
+		klog.Errorf("stage volume error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	// stash VolumeContext to stagingParentPath (useful during Unstage as it has no
+	// VolumeContext passed to the RPC as per the CSI spec)
+	err = util.StashVolumeContext(req.GetVolumeContext(), stagingParentPath)
+	if err != nil {
+		klog.Errorf("stash volume context error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &csi.NodeStageVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	ns.mtx.Lock()
-	volume, exists := ns.volumes[volumeID]
-	ns.mtx.Unlock()
-	if !exists {
-		return nil, status.Error(codes.NotFound, volumeID)
-	}
+	unlock := ns.volumeLocks.Lock(volumeID)
+	defer unlock()
 
-	err := func() error {
-		if volume.tryLock.Lock() {
-			defer volume.tryLock.Unlock()
+	stagingParentPath := req.GetStagingTargetPath()
+	stagingTargetPath := getStagingTargetPath(req)
 
-			if volume.stagingPath == "" {
-				klog.Warning("volume already unstaged")
-				return nil
-			}
-			err := ns.deleteMountPoint(volume.stagingPath) // idempotent
-			if err != nil {
-				return status.Errorf(codes.Internal, "unstage volume %s failed: %s", volumeID, err)
-			}
-			err = volume.initiator.Disconnect() // idempotent
-			if err != nil {
-				return status.Error(codes.Internal, err.Error())
-			}
-			volume.stagingPath = ""
-			return nil
-		}
-		return status.Error(codes.Aborted, "concurrent request ongoing")
-	}()
+	isStaged, err := ns.isStaged(stagingTargetPath)
 	if err != nil {
-		return nil, err
+		klog.Errorf("check isStaged error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !isStaged {
+		klog.Warning("volume already unstaged")
+		return &csi.NodeUnstageVolumeResponse{}, nil
 	}
 
-	ns.mtx.Lock()
-	delete(ns.volumes, volumeID)
-	ns.mtx.Unlock()
+	err = ns.deleteMountPoint(stagingTargetPath) // idempotent
+	if err != nil {
+		klog.Errorf("delete mount point error: %v", err)
+		return nil, status.Errorf(codes.Internal, "unstage volume %s failed: %s", volumeID, err)
+	}
+
+	volumeContext, err := util.LookupVolumeContext(stagingParentPath)
+	if err != nil {
+		klog.Errorf("lookup volume context error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	var initiator util.SpdkCsiInitiator
+	if ns.smaClient != nil && ns.smaTargetType != "" {
+		vc := volumeContext
+		vc["stagingParentPath"] = stagingParentPath
+		initiator, err = util.NewSpdkCsiSmaInitiator(vc, ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
+	} else {
+		initiator, err = util.NewSpdkCsiInitiator(volumeContext)
+	}
+	if err != nil {
+		klog.Errorf("create spdk initiator error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	err = initiator.Disconnect() // idempotent
+	if err != nil {
+		klog.Errorf("disconnect initiator error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if err := util.CleanUpVolumeContext(stagingParentPath); err != nil {
+		klog.Warningf("clean up volume context error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	ns.mtx.Lock()
-	volume, exists := ns.volumes[volumeID]
-	ns.mtx.Unlock()
-	if !exists {
-		return nil, status.Error(codes.NotFound, volumeID)
-	}
+	unlock := ns.volumeLocks.Lock(volumeID)
+	defer unlock()
 
-	if volume.tryLock.Lock() {
-		defer volume.tryLock.Unlock()
-
-		if volume.stagingPath == "" {
-			return nil, status.Error(codes.Aborted, "volume unstaged")
-		}
-		err := ns.publishVolume(volume.stagingPath, req) // idempotent
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		return &csi.NodePublishVolumeResponse{}, nil
+	err := ns.publishVolume(getStagingTargetPath(req), req) // idempotent
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return nil, status.Error(codes.Aborted, "concurrent request ongoing")
+	return &csi.NodePublishVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	ns.mtx.Lock()
-	volume, exists := ns.volumes[volumeID]
-	ns.mtx.Unlock()
-	if !exists {
-		return nil, status.Error(codes.NotFound, volumeID)
-	}
+	unlock := ns.volumeLocks.Lock(volumeID)
+	defer unlock()
 
-	if volume.tryLock.Lock() {
-		defer volume.tryLock.Unlock()
-
-		err := ns.deleteMountPoint(req.GetTargetPath()) // idempotent
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		return &csi.NodeUnpublishVolumeResponse{}, nil
+	err := ns.deleteMountPoint(req.GetTargetPath()) // idempotent
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return nil, status.Error(codes.Aborted, "concurrent request ongoing")
+	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodeGetCapabilities(_ context.Context, _ *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
@@ -289,14 +276,13 @@ func (ns *nodeServer) NodeGetCapabilities(_ context.Context, _ *csi.NodeGetCapab
 // must be idempotent
 //
 //nolint:cyclop // many cases in switch increases complexity
-func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeRequest) (string, error) {
-	stagingPath := req.GetStagingTargetPath() + "/" + req.GetVolumeId()
+func (ns *nodeServer) stageVolume(devicePath, stagingPath string, req *csi.NodeStageVolumeRequest) error {
 	mounted, err := ns.createMountPoint(stagingPath)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if mounted {
-		return stagingPath, nil
+		return nil
 	}
 
 	fsType := req.GetVolumeCapability().GetMount().GetFsType()
@@ -307,7 +293,7 @@ func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeReq
 		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 		mntFlags = append(mntFlags, "ro")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
-		return "", errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
+		return errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER:
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
@@ -319,9 +305,22 @@ func (ns *nodeServer) stageVolume(devicePath string, req *csi.NodeStageVolumeReq
 	mounter := mount.SafeFormatAndMount{Interface: ns.mounter, Exec: exec.New()}
 	err = mounter.FormatAndMount(devicePath, stagingPath, fsType, mntFlags)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return stagingPath, nil
+	return nil
+}
+
+// isStaged if stagingPath is a mount point, it means it is already staged, and vice versa
+func (ns *nodeServer) isStaged(stagingPath string) (bool, error) {
+	unmounted, err := mount.IsNotMountPoint(ns.mounter, stagingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		klog.Warningf("check is stage error: %v", err)
+		return true, err
+	}
+	return !unmounted, nil
 }
 
 // must be idempotent
@@ -372,4 +371,16 @@ func (ns *nodeServer) deleteMountPoint(path string) error {
 		}
 	}
 	return os.RemoveAll(path)
+}
+
+func getStagingTargetPath(req interface{}) string {
+	switch vr := req.(type) {
+	case *csi.NodeStageVolumeRequest:
+		return vr.GetStagingTargetPath() + "/" + vr.GetVolumeId()
+	case *csi.NodeUnstageVolumeRequest:
+		return vr.GetStagingTargetPath() + "/" + vr.GetVolumeId()
+	case *csi.NodePublishVolumeRequest:
+		return vr.GetStagingTargetPath() + "/" + vr.GetVolumeId()
+	}
+	return ""
 }

@@ -58,6 +58,14 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 				ginkgo.Fail(err.Error())
 			}
 
+			ginkgo.By("restart csi driver", func() {
+				rolloutNodeServer()
+				err = waitForNodeServerReady(f.ClientSet, 3*time.Minute)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+			})
+
 			err = checkDataPersistForMultiPvcs(f)
 			if err != nil {
 				ginkgo.Fail(err.Error())
