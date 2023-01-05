@@ -88,6 +88,15 @@ func (node *nodeISCSI) CreateVolume(lvolName, lvsName string, sizeMiB int64) (st
 	return lvolID, nil
 }
 
+// GetVolume returns the volume id of the given volume name and lvstore name. return error if not found.
+func (node *nodeISCSI) GetVolume(lvolName, lvsName string) (string, error) {
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
+	if err != nil {
+		return "", err
+	}
+	return lvol.UUID, err
+}
+
 func (node *nodeISCSI) isVolumeCreated(lvolID string) (bool, error) {
 	return node.client.isVolumeCreated(lvolID)
 }

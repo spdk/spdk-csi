@@ -58,7 +58,12 @@ var _ = ginkgo.Describe("SPDKCSI-DRIVER-RESTART", func() {
 			})
 			ginkgo.By("restart csi driver", func() {
 				rolloutNodeServer()
+				rolloutControllerServer()
 				err := waitForNodeServerReady(f.ClientSet, 3*time.Minute)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+				err = waitForControllerReady(f.ClientSet, 4*time.Minute)
 				if err != nil {
 					ginkgo.Fail(err.Error())
 				}

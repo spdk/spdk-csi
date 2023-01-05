@@ -20,7 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"strconv"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -36,109 +37,48 @@ var errVolumeInCreation = status.Error(codes.Internal, "volume in creation")
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
-
-	spdkNodes []util.SpdkNode // all spdk nodes in cluster
-
-	volumes       map[string]*volume      // volume id to volume struct
-	volumesIdem   map[string]string       // volume name to id, for CreateVolume idempotency
-	mtx           sync.Mutex              // protect volumes and volumesIdem map
-	snapshotsIdem map[string]csi.Snapshot // snapshot id to csi.Snapshot struct
-	mtxSnapshot   sync.RWMutex            // protect snapshotsIdem map
+	spdkNodes   map[string]util.SpdkNode // all spdk nodes in cluster
+	volumeLocks *util.VolumeLocks
 }
 
-type volume struct {
-	name      string // CO provided volume name
-	spdkNode  util.SpdkNode
-	csiVolume csi.Volume
-	mtx       sync.Mutex // per volume lock to serialize DeleteVolume requests
+type spdkVolume struct {
+	lvolID   string
+	nodeName string
 }
 
 func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	// be idempotent to duplicated requests
-	volume, err := func() (*volume, error) {
-		const creatingTag = "__CREATING__"
-		cs.mtx.Lock()
-		defer cs.mtx.Unlock()
+	volumeID := req.GetName()
+	unlock := cs.volumeLocks.Lock(volumeID)
+	defer unlock()
 
-		volumeID, exists := cs.volumesIdem[req.Name]
-		if exists {
-			// this is a duplicated request
-			if volumeID == creatingTag {
-				// another task is still processing same request
-				return nil, errVolumeInCreation
-			}
-			// another task has successfully processed same request
-			volume := cs.volumes[volumeID]
-			klog.Warningf("volume exists: %s, %p", req.Name, volume)
-			return volume, nil
-		}
-		// we're processing the first request
-		cs.volumesIdem[req.Name] = creatingTag
-		return nil, nil
-	}()
-	if err != nil {
-		return nil, err
-	}
-	if volume != nil {
-		return &csi.CreateVolumeResponse{Volume: &volume.csiVolume}, nil
-	}
-
-	// no concurrent task for same request from now on
-	defer func() {
-		if err != nil {
-			cs.mtx.Lock()
-			delete(cs.volumesIdem, req.Name)
-			cs.mtx.Unlock()
-		}
-	}()
-
-	volume, err = cs.createVolume(req)
+	csiVolume, err := cs.createVolume(req)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	volumeInfo, err := publishVolume(volume)
+	volumeInfo, err := cs.publishVolume(csiVolume.GetVolumeId())
 	if err != nil {
-		deleteVolume(volume) //nolint:errcheck // we can do little
+		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// copy volume info. node needs these info to contact target(ip, port, nqn, ...)
-	if volume.csiVolume.VolumeContext == nil {
-		volume.csiVolume.VolumeContext = volumeInfo
+	if csiVolume.VolumeContext == nil {
+		csiVolume.VolumeContext = volumeInfo
 	} else {
 		for k, v := range volumeInfo {
-			volume.csiVolume.VolumeContext[k] = v
+			csiVolume.VolumeContext[k] = v
 		}
 	}
 
-	volumeID := volume.csiVolume.GetVolumeId()
-	cs.mtx.Lock()
-	cs.volumes[volumeID] = volume
-	cs.volumesIdem[req.Name] = volumeID
-	cs.mtx.Unlock()
-
-	return &csi.CreateVolumeResponse{Volume: &volume.csiVolume}, nil
+	return &csi.CreateVolumeResponse{Volume: csiVolume}, nil
 }
 
 func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	cs.mtx.Lock()
-	volume, exists := cs.volumes[volumeID]
-	cs.mtx.Unlock()
-	if !exists {
-		// already deleted?
-		klog.Warningf("volume not exists: %s", volumeID)
-		return &csi.DeleteVolumeResponse{}, nil
-	} else if volume.csiVolume.GetVolumeId() != volumeID {
-		return nil, status.Error(codes.Internal, "data corrupt! volume id mismatch!")
-	}
-
-	// serialize requests to same volume by holding volume lock
-	volume.mtx.Lock()
-	defer volume.mtx.Unlock()
-
+	unlock := cs.volumeLocks.Lock(volumeID)
+	defer unlock()
 	// no harm if volume already unpublished
-	err := unpublishVolume(volume)
+	err := cs.unpublishVolume(volumeID)
 	switch {
 	case errors.Is(err, util.ErrVolumeUnpublished):
 		// unpublished but not deleted in last request?
@@ -151,19 +91,13 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 	}
 
 	// no harm if volume already deleted
-	err = deleteVolume(volume)
+	err = cs.deleteVolume(volumeID)
 	if errors.Is(err, util.ErrJSONNoSuchDevice) {
 		// deleted in previous request?
 		klog.Warningf("volume not exists: %s", volumeID)
 	} else if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-
-	// no harm if volumeID already deleted
-	cs.mtx.Lock()
-	delete(cs.volumes, volumeID)
-	delete(cs.volumesIdem, volume.name)
-	cs.mtx.Unlock()
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -189,62 +123,38 @@ func (cs *controllerServer) ValidateVolumeCapabilities(_ context.Context, req *c
 	}, nil
 }
 
-func (cs *controllerServer) ControllerGetVolume(_ context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	volumeID := req.GetVolumeId()
-
-	cs.mtx.Lock()
-	volume, exists := cs.volumes[volumeID]
-	cs.mtx.Unlock()
-	if !exists {
-		errMsg := fmt.Sprintf("volume does not exist: %s", volumeID)
-		klog.Warningf(errMsg)
-		return &csi.ControllerGetVolumeResponse{}, status.Error(codes.NotFound, errMsg)
-	}
-
-	return &csi.ControllerGetVolumeResponse{Volume: &volume.csiVolume}, nil
-}
-
 func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	lvolID := req.GetSourceVolumeId()
+	volumeID := req.GetSourceVolumeId()
+	unlock := cs.volumeLocks.Lock(volumeID)
+	defer unlock()
+
 	snapshotName := req.GetName()
-
-	cs.mtx.Lock()
-	volume, exists := cs.volumes[lvolID]
-	cs.mtx.Unlock()
-	if !exists {
-		klog.Warningf("volume does not exist: %s", lvolID)
-		return &csi.CreateSnapshotResponse{}, status.Error(codes.Internal, "snapshot source volume does not exist")
+	spdkVol, err := getSPDKVol(volumeID)
+	if err != nil {
+		return nil, err
 	}
 
-	cs.mtxSnapshot.RLock()
-	if exSnap, ok := cs.snapshotsIdem[snapshotName]; ok {
-		cs.mtxSnapshot.RUnlock()
-		if exSnap.SourceVolumeId == lvolID {
-			return &csi.CreateSnapshotResponse{
-				Snapshot: &exSnap,
-			}, nil
-		}
-		return nil, status.Errorf(codes.AlreadyExists, "snapshot with the same name: %s but with different SourceVolumeId already exists", snapshotName)
-	}
-	cs.mtxSnapshot.RUnlock()
-
-	snapshotID, err := volume.spdkNode.CreateSnapshot(lvolID, snapshotName)
+	snapshotID, err := cs.spdkNodes[spdkVol.nodeName].CreateSnapshot(spdkVol.lvolID, snapshotName)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	volInfo, err := cs.spdkNodes[spdkVol.nodeName].VolumeInfo(spdkVol.lvolID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	size, err := strconv.ParseInt(volInfo["lvolSize"], 10, 64)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	creationTime := timestamppb.Now()
 	snapshotData := csi.Snapshot{
-		SizeBytes:      volume.csiVolume.GetCapacityBytes(),
-		SnapshotId:     snapshotID,
-		SourceVolumeId: lvolID,
+		SizeBytes:      size,
+		SnapshotId:     fmt.Sprintf("%s:%s", spdkVol.nodeName, snapshotID),
+		SourceVolumeId: spdkVol.lvolID,
 		CreationTime:   creationTime,
 		ReadyToUse:     true,
 	}
-
-	cs.mtxSnapshot.Lock()
-	cs.snapshotsIdem[snapshotID] = snapshotData
-	cs.mtxSnapshot.Unlock()
 
 	return &csi.CreateSnapshotResponse{
 		Snapshot: &snapshotData,
@@ -252,93 +162,123 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 }
 
 func (cs *controllerServer) DeleteSnapshot(_ context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	snapshotID := req.SnapshotId
-	cs.mtxSnapshot.RLock()
-	exSnap, exists := cs.snapshotsIdem[snapshotID]
-	cs.mtxSnapshot.RUnlock()
-	if !exists {
-		klog.Warningf("snapshot does not exist: %s", snapshotID)
-		return &csi.DeleteSnapshotResponse{}, status.Error(codes.Internal, "snapshot does not exist")
+	snapshotID := req.GetSnapshotId()
+	unlock := cs.volumeLocks.Lock(snapshotID)
+	defer unlock()
+
+	spdkVol, err := getSPDKVol(snapshotID)
+	if err != nil {
+		return nil, err
 	}
 
-	sourceVolumeID := exSnap.SourceVolumeId
-	cs.mtx.Lock()
-	volume, exists := cs.volumes[sourceVolumeID]
-	cs.mtx.Unlock()
-	if !exists {
-		klog.Warningf("sourceVolume does not exist: %s", sourceVolumeID)
-		return &csi.DeleteSnapshotResponse{}, status.Error(codes.Internal, "snapshot source volume does not exist")
-	}
-
-	err := volume.spdkNode.DeleteVolume(snapshotID)
+	err = cs.spdkNodes[spdkVol.nodeName].DeleteVolume(spdkVol.lvolID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	cs.mtxSnapshot.Lock()
-	delete(cs.snapshotsIdem, snapshotID)
-	cs.mtxSnapshot.Unlock()
-
 	return &csi.DeleteSnapshotResponse{}, nil
 }
 
-func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*volume, error) {
+func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Volume, error) {
 	size := req.GetCapacityRange().GetRequiredBytes()
 	if size == 0 {
 		klog.Warningln("invalid volume size, resize to 1G")
 		size = 1024 * 1024 * 1024
 	}
 	sizeMiB := util.ToMiB(size)
+	vol := csi.Volume{
+		CapacityBytes: sizeMiB * 1024 * 1024,
+		VolumeContext: req.GetParameters(),
+		ContentSource: req.GetVolumeContentSource(),
+	}
+
+	// check all SPDK nodes to see if the volume has already been created
+	for nodeName, node := range cs.spdkNodes {
+		lvStores, err := node.LvStores()
+		if err != nil {
+			return nil, fmt.Errorf("get lvstores of node:%s failed: %w", nodeName, err)
+		}
+		for lvsIdx := range lvStores {
+			volumeID, err := node.GetVolume(req.GetName(), lvStores[lvsIdx].Name)
+			if err == nil {
+				vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
+				return &vol, nil
+			}
+		}
+	}
 
 	// schedule suitable node:lvstore
-	spdkNode, lvstore, err := cs.schedule(sizeMiB)
+	nodeName, lvstore, err := cs.schedule(sizeMiB)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
-	volumeID, err := spdkNode.CreateVolume(req.GetName(), lvstore, sizeMiB)
+	volumeID, err := cs.spdkNodes[nodeName].CreateVolume(req.GetName(), lvstore, sizeMiB)
 	if err != nil {
 		return nil, err
 	}
+	// in the subsequent DeleteVolume() request, a nodeName needs to be specified,
+	// but the current CSI mechanism only passes the VolumeId to DeleteVolume().
+	// therefore, the nodeName is included as part of the VolumeId.
+	vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
 
-	return &volume{
-		name:     req.Name,
-		spdkNode: spdkNode,
-		csiVolume: csi.Volume{
-			VolumeId:      volumeID,
-			CapacityBytes: sizeMiB * 1024 * 1024,
-			VolumeContext: req.GetParameters(),
-			ContentSource: req.GetVolumeContentSource(),
-		},
-	}, nil
+	return &vol, nil
 }
 
-func publishVolume(volume *volume) (map[string]string, error) {
-	err := volume.spdkNode.PublishVolume(volume.csiVolume.GetVolumeId())
+func getSPDKVol(csiVolumeID string) (*spdkVolume, error) {
+	// extract spdkNodeName and spdkLvolID from csiVolumeID
+	// csiVolumeID: node001:8e2dcb9d-3a79-4362-965e-fdb0cd3f4b8d
+	// spdkNodeName: node001
+	// spdklvolID: 8e2dcb9d-3a79-4362-965e-fdb0cd3f4b8d
+
+	ids := strings.Split(csiVolumeID, ":")
+	if len(ids) == 2 {
+		return &spdkVolume{
+			nodeName: ids[0],
+			lvolID:   ids[1],
+		}, nil
+	}
+	return nil, fmt.Errorf("missing nodeName in volume: %s", csiVolumeID)
+}
+
+func (cs *controllerServer) publishVolume(volumeID string) (map[string]string, error) {
+	spdkVol, err := getSPDKVol(volumeID)
+	if err != nil {
+		return nil, err
+	}
+	err = cs.spdkNodes[spdkVol.nodeName].PublishVolume(spdkVol.lvolID)
 	if err != nil {
 		return nil, err
 	}
 
-	volumeInfo, err := volume.spdkNode.VolumeInfo(volume.csiVolume.GetVolumeId())
+	volumeInfo, err := cs.spdkNodes[spdkVol.nodeName].VolumeInfo(spdkVol.lvolID)
 	if err != nil {
-		unpublishVolume(volume) //nolint:errcheck // we can do little
+		cs.unpublishVolume(volumeID) //nolint:errcheck // we can do little
 		return nil, err
 	}
 	return volumeInfo, nil
 }
 
-func deleteVolume(volume *volume) error {
-	return volume.spdkNode.DeleteVolume(volume.csiVolume.GetVolumeId())
+func (cs *controllerServer) deleteVolume(volumeID string) error {
+	spdkVol, err := getSPDKVol(volumeID)
+	if err != nil {
+		return err
+	}
+	return cs.spdkNodes[spdkVol.nodeName].DeleteVolume(spdkVol.lvolID)
 }
 
-func unpublishVolume(volume *volume) error {
-	return volume.spdkNode.UnpublishVolume(volume.csiVolume.GetVolumeId())
+func (cs *controllerServer) unpublishVolume(volumeID string) error {
+	spdkVol, err := getSPDKVol(volumeID)
+	if err != nil {
+		return err
+	}
+	return cs.spdkNodes[spdkVol.nodeName].UnpublishVolume(spdkVol.lvolID)
 }
 
 // simplest volume scheduler: find first node:lvstore with enough free space
-func (cs *controllerServer) schedule(sizeMiB int64) (spdkNode util.SpdkNode, lvstore string, err error) {
-	for _, spdkNode := range cs.spdkNodes {
+func (cs *controllerServer) schedule(sizeMiB int64) (nodeName, lvstore string, err error) {
+	for name, spdkNode := range cs.spdkNodes {
 		// retrieve lastest lvstore info from spdk node
 		lvstores, err := spdkNode.LvStores()
 		if err != nil {
@@ -349,21 +289,20 @@ func (cs *controllerServer) schedule(sizeMiB int64) (spdkNode util.SpdkNode, lvs
 		for i := range lvstores {
 			lvstore := &lvstores[i]
 			if lvstore.FreeSizeMiB > sizeMiB {
-				return spdkNode, lvstore.Name, nil
+				return name, lvstore.Name, nil
 			}
 		}
 		klog.Infof("not enough free space from node %s", spdkNode.Info())
 	}
 
-	return nil, "", fmt.Errorf("failed to find node with enough free space")
+	return "", "", fmt.Errorf("failed to find node with enough free space")
 }
 
 func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	server := controllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
-		volumes:                 make(map[string]*volume),
-		volumesIdem:             make(map[string]string),
-		snapshotsIdem:           make(map[string]csi.Snapshot),
+		spdkNodes:               map[string]util.SpdkNode{},
+		volumeLocks:             util.NewVolumeLocks(),
 	}
 
 	// get spdk node configs, see deploy/kubernetes/config-map.yaml
@@ -411,7 +350,7 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 					klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
 				} else {
 					klog.Infof("spdk node created: name=%s, url=%s", node.Name, node.URL)
-					server.spdkNodes = append(server.spdkNodes, spdkNode)
+					server.spdkNodes[node.Name] = spdkNode
 				}
 				break
 			}

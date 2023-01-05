@@ -78,6 +78,7 @@ type SpdkNode interface {
 	LvStores() ([]LvStore, error)
 	VolumeInfo(lvolID string) (map[string]string, error)
 	CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error)
+	GetVolume(lvolName, lvsName string) (string, error)
 	DeleteVolume(lvolID string) error
 	PublishVolume(lvolID string) error
 	UnpublishVolume(lvolID string) error
