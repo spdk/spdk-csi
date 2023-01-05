@@ -25,8 +25,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // SpdkNode defines interface for SPDK storage node
@@ -79,7 +77,7 @@ type SpdkNode interface {
 	Info() string
 	LvStores() ([]LvStore, error)
 	VolumeInfo(lvolID string) (map[string]string, error)
-	CreateVolume(lvsName string, sizeMiB int64) (string, error)
+	CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error)
 	DeleteVolume(lvolID string) error
 	PublishVolume(lvolID string) error
 	UnpublishVolume(lvolID string) error
@@ -89,16 +87,31 @@ type SpdkNode interface {
 // logical volume store
 type LvStore struct {
 	Name         string
+	UUID         string
 	TotalSizeMiB int64
 	FreeSizeMiB  int64
+}
+
+// BDev SPDK block device
+type BDev struct {
+	Name           string `json:"name"`
+	UUID           string `json:"uuid"`
+	BlockSize      int64  `json:"block_size"`
+	NumBlocks      int64  `json:"num_blocks"`
+	DriverSpecific *struct {
+		Lvol struct {
+			LvolStoreUUID string `json:"lvol_store_uuid"`
+		} `json:"lvol"`
+	} `json:"driver_specific,omitempty"`
 }
 
 // errors deserve special care
 var (
 	// json response errors: errors.New("json: tag-string")
 	// matches if "tag-string" founded in json error string
-	ErrJSONNoSpaceLeft  = errors.New("json: No space left")
-	ErrJSONNoSuchDevice = errors.New("json: No such device")
+	ErrJSONNoSpaceLeft   = errors.New("json: No space left")
+	ErrJSONNoSuchDevice  = errors.New("json: No such device")
+	ErrInvalidParameters = errors.New("json: Invalid parameters")
 
 	// internal errors
 	ErrVolumeDeleted     = errors.New("volume deleted")
@@ -145,6 +158,7 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 		ClusterSize   int64  `json:"cluster_size"`
 		TotalClusters int64  `json:"total_data_clusters"`
 		Name          string `json:"name"`
+		UUID          string `json:"uuid"`
 	}
 
 	err := client.call("bdev_lvol_get_lvstores", nil, &result)
@@ -156,6 +170,7 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 	for i := range result {
 		r := &result[i]
 		lvs[i].Name = r.Name
+		lvs[i].UUID = r.UUID
 		lvs[i].TotalSizeMiB = r.TotalClusters * r.ClusterSize / 1024 / 1024
 		lvs[i].FreeSizeMiB = r.FreeClusters * r.ClusterSize / 1024 / 1024
 	}
@@ -163,7 +178,7 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 	return lvs, nil
 }
 
-func (client *rpcClient) createVolume(lvsName string, sizeMiB int64) (string, error) {
+func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64) (string, error) {
 	params := struct {
 		LvolName      string `json:"lvol_name"`
 		Size          int64  `json:"size"`
@@ -171,7 +186,7 @@ func (client *rpcClient) createVolume(lvsName string, sizeMiB int64) (string, er
 		ClearMethod   string `json:"clear_method"`
 		ThinProvision bool   `json:"thin_provision"`
 	}{
-		LvolName:      "csi-" + uuid.New().String(),
+		LvolName:      lvolName,
 		Size:          sizeMiB * 1024 * 1024,
 		LvsName:       lvsName,
 		ClearMethod:   cfgLvolClearMethod,
@@ -186,6 +201,33 @@ func (client *rpcClient) createVolume(lvsName string, sizeMiB int64) (string, er
 	}
 
 	return lvolID, err
+}
+
+// get a volume and return a BDev
+func (client *rpcClient) getVolume(lvolID string) (*BDev, error) {
+	var result []BDev
+
+	params := struct {
+		Name string `json:"name"`
+	}{
+		Name: lvolID,
+	}
+	err := client.call("bdev_get_bdevs", &params, &result)
+	if errorMatches(err, ErrJSONNoSuchDevice) {
+		return nil, ErrJSONNoSuchDevice
+	}
+	return &result[0], nil
+}
+
+func (client *rpcClient) isVolumeCreated(lvolID string) (bool, error) {
+	_, err := client.getVolume(lvolID)
+	if err != nil {
+		if errors.Is(err, ErrJSONNoSuchDevice) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (client *rpcClient) deleteVolume(lvolID string) error {
@@ -216,6 +258,28 @@ func (client *rpcClient) snapshot(lvolName, snapShotName string) (string, error)
 	err := client.call("bdev_lvol_snapshot", &params, &snapshotID)
 
 	return snapshotID, err
+}
+
+// getLvstore get lvstore name for specific lvol
+func (client *rpcClient) getLvstore(lvolID string) (string, error) {
+	lvol, err := client.getVolume(lvolID)
+	if err != nil {
+		return "", err
+	}
+	if lvol.DriverSpecific == nil {
+		return "", fmt.Errorf("no driver_specific for %s", lvolID)
+	}
+	lvstoreUUID := lvol.DriverSpecific.Lvol.LvolStoreUUID
+	lvstores, err := client.lvStores()
+	if err != nil {
+		return "", err
+	}
+	for i := range lvstores {
+		if lvstores[i].UUID == lvstoreUUID {
+			return lvstores[i].Name, nil
+		}
+	}
+	return "", fmt.Errorf("lvstore for %s not found", lvolID)
 }
 
 // low level rpc request/response handling

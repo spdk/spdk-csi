@@ -297,7 +297,7 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*volume,
 	}
 
 	// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
-	volumeID, err := spdkNode.CreateVolume(lvstore, sizeMiB)
+	volumeID, err := spdkNode.CreateVolume(req.GetName(), lvstore, sizeMiB)
 	if err != nil {
 		return nil, err
 	}

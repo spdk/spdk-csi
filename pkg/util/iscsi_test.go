@@ -50,7 +50,7 @@ func TestISCSI(t *testing.T) {
 		t.Fatalf("No free space: %s", lvs[0].Name)
 	}
 
-	lvolID, err := node.CreateVolume(lvs[0].Name, lvs[0].FreeSizeMiB)
+	lvolID, err := node.CreateVolume("lvol0", lvs[0].Name, lvs[0].FreeSizeMiB)
 	if err != nil {
 		t.Fatalf("CreateVolume: %s", err)
 	}
@@ -114,44 +114,23 @@ func iscsiValidateVolumeDeleted(node *nodeISCSI, lvolID string) error {
 }
 
 func iscsiValidateVolumeCreated(node *nodeISCSI, lvolID string) error {
-	params := struct {
-		Name string `json:"name"`
-	}{
-		Name: lvolID,
-	}
-
-	var result []struct {
-		BlockSize int64 `json:"block_size"`
-		NumBlocks int64 `json:"num_blocks"`
-	}
-
-	err := node.client.call("bdev_get_bdevs", &params, &result)
+	created, err := node.isVolumeCreated(lvolID)
 	if err != nil {
 		return err
 	}
-
-	if len(result) == 0 {
+	if !created {
 		return fmt.Errorf("lvol not found: %s", lvolID)
 	}
-
 	return nil
 }
 
 func iscsiValidateVolumePublished(node *nodeISCSI, lvolID string) error {
-	iqn := "iqn.2016-06.io.spdk:" + lvolID
-	var result []struct {
-		Name string `json:"name"`
-	}
-
-	err := node.client.call("iscsi_get_target_nodes", nil, &result)
+	published, err := node.isVolumePublished(lvolID)
 	if err != nil {
 		return err
 	}
-	for _, value := range result {
-		if value.Name == iqn {
-			return nil
-		}
+	if !published {
+		return fmt.Errorf("volume not published: %s", lvolID)
 	}
-
-	return fmt.Errorf("iqn not found: %s", iqn)
+	return nil
 }

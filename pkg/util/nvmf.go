@@ -18,14 +18,12 @@ package util
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"k8s.io/klog"
 )
-
-const invalidNSID = 0
 
 type nodeNVMf struct {
 	client *rpcClient
@@ -34,21 +32,6 @@ type nodeNVMf struct {
 	targetAddr   string
 	targetPort   string
 	transCreated int32
-
-	lvols map[string]*lvolNVMf
-	mtx   sync.Mutex // for concurrent access to lvols map
-}
-
-type lvolNVMf struct {
-	nsID  int
-	nqn   string
-	model string
-}
-
-func (lvol *lvolNVMf) reset() {
-	lvol.nsID = invalidNSID
-	lvol.nqn = ""
-	lvol.model = ""
 }
 
 func newNVMf(client *rpcClient, targetType, targetAddr string) *nodeNVMf {
@@ -57,7 +40,6 @@ func newNVMf(client *rpcClient, targetType, targetAddr string) *nodeNVMf {
 		targetType: targetType,
 		targetAddr: targetAddr,
 		targetPort: cfgNVMfSvcPort,
-		lvols:      make(map[string]*lvolNVMf),
 	}
 }
 
@@ -72,44 +54,52 @@ func (node *nodeNVMf) LvStores() ([]LvStore, error) {
 // VolumeInfo returns a string:string map containing information necessary
 // for CSI node(initiator) to connect to this target and identify the disk.
 func (node *nodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
-	node.mtx.Lock()
-	lvol, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
-
-	if !exists {
-		return nil, fmt.Errorf("volume not exists: %s", lvolID)
+	lvol, err := node.client.getVolume(lvolID)
+	if err != nil {
+		return nil, err
 	}
 
 	return map[string]string{
 		"targetType": node.targetType,
 		"targetAddr": node.targetAddr,
 		"targetPort": node.targetPort,
-		"nqn":        lvol.nqn,
-		"model":      lvol.model,
+		"nqn":        node.getVolumeNqn(lvolID),
+		"model":      node.getVolumeModel(lvolID),
+		"lvolSize":   strconv.FormatInt(lvol.BlockSize*lvol.NumBlocks, 10),
 	}, nil
 }
 
 // CreateVolume creates a logical volume and returns volume ID
-func (node *nodeNVMf) CreateVolume(lvsName string, sizeMiB int64) (string, error) {
-	lvolID, err := node.client.createVolume(lvsName, sizeMiB)
+func (node *nodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error) {
+	// all volume have an alias ID named lvsName/lvolName
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
+	if err == nil {
+		klog.Warningf("volume already created: %s/%s %s", lvsName, lvolName, lvol.UUID)
+		return lvol.UUID, nil
+	}
+
+	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB)
 	if err != nil {
 		return "", err
 	}
-
-	node.mtx.Lock()
-	defer node.mtx.Unlock()
-
-	_, exists := node.lvols[lvolID]
-	if exists {
-		return "", fmt.Errorf("volume ID already exists: %s", lvolID)
-	}
-	node.lvols[lvolID] = &lvolNVMf{nsID: invalidNSID}
-
 	klog.V(5).Infof("volume created: %s", lvolID)
 	return lvolID, nil
 }
 
+func (node *nodeNVMf) isVolumeCreated(lvolID string) (bool, error) {
+	return node.client.isVolumeCreated(lvolID)
+}
+
 func (node *nodeNVMf) CreateSnapshot(lvolName, snapshotName string) (string, error) {
+	lvsName, err := node.client.getLvstore(lvolName)
+	if err != nil {
+		return "", err
+	}
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, snapshotName))
+	if err == nil {
+		klog.Warningf("snapshot already created: %s", lvol.UUID)
+		return lvol.UUID, nil
+	}
 	snapshotID, err := node.client.snapshot(lvolName, snapshotName)
 	if err != nil {
 		return "", err
@@ -124,59 +114,47 @@ func (node *nodeNVMf) DeleteVolume(lvolID string) error {
 	if err != nil {
 		return err
 	}
-
-	node.mtx.Lock()
-	defer node.mtx.Unlock()
-
-	delete(node.lvols, lvolID)
-
 	klog.V(5).Infof("volume deleted: %s", lvolID)
 	return nil
 }
 
 // PublishVolume exports a volume through NVMf target
 func (node *nodeNVMf) PublishVolume(lvolID string) error {
-	var err error
+	exists, err := node.isVolumeCreated(lvolID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrVolumeDeleted
+	}
+	published, err := node.isVolumePublished(lvolID)
+	if err != nil {
+		return err
+	}
+	if published {
+		return nil
+	}
 
 	err = node.createTransport()
 	if err != nil {
 		return err
 	}
 
-	node.mtx.Lock()
-	lvol, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
-
-	if !exists {
-		return ErrVolumeDeleted
-	}
-	if lvol.nqn != "" {
-		return ErrVolumePublished
-	}
-
-	// cleanup lvol on error
-	defer func() {
-		if err != nil {
-			lvol.reset()
-		}
-	}()
-
-	lvol.model = lvolID
-	lvol.nqn, err = node.createSubsystem(lvol.model)
+	err = node.createSubsystem(lvolID)
 	if err != nil {
 		return err
 	}
 
-	lvol.nsID, err = node.subsystemAddNs(lvol.nqn, lvolID)
+	_, err = node.subsystemAddNs(lvolID)
 	if err != nil {
-		node.deleteSubsystem(lvol.nqn) //nolint:errcheck // we can do few
+		node.deleteSubsystem(lvolID) //nolint:errcheck // we can do few
 		return err
 	}
 
-	err = node.subsystemAddListener(lvol.nqn)
+	err = node.subsystemAddListener(lvolID)
 	if err != nil {
-		node.subsystemRemoveNs(lvol.nqn, lvol.nsID) //nolint:errcheck // ditto
-		node.deleteSubsystem(lvol.nqn)              //nolint:errcheck // ditto
+		node.subsystemRemoveNs(lvolID) //nolint:errcheck // ditto
+		node.deleteSubsystem(lvolID)   //nolint:errcheck // ditto
 		return err
 	}
 
@@ -184,62 +162,93 @@ func (node *nodeNVMf) PublishVolume(lvolID string) error {
 	return nil
 }
 
-func (node *nodeNVMf) UnpublishVolume(lvolID string) error {
-	var err error
-
-	node.mtx.Lock()
-	lvol, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
-
-	if !exists {
-		return ErrVolumeDeleted
+func (node *nodeNVMf) isVolumePublished(lvolID string) (bool, error) {
+	var result []struct {
+		Address struct {
+			TrType  string `json:"trtype"`
+			AdrFam  string `json:"adrfam"`
+			TrAddr  string `json:"traddr"`
+			TrSvcID string `json:"trsvcid"`
+		} `json:"address"`
 	}
-	if lvol.nqn == "" {
-		return ErrVolumeUnpublished
+	params := struct {
+		Nqn string `json:"nqn"`
+	}{
+		Nqn: node.getVolumeNqn(lvolID),
 	}
-
-	err = node.subsystemRemoveNs(lvol.nqn, lvol.nsID)
+	err := node.client.call("nvmf_subsystem_get_listeners", &params, &result)
 	if err != nil {
-		// we should try deleting subsystem even if we fail here
-		klog.Errorf("failed to remove namespace(nqn=%s, nsid=%d): %s", lvol.nqn, lvol.nsID, err)
-	} else {
-		lvol.nsID = invalidNSID
+		// querying nqn that does not exist, an invalid parameters error will be thrown
+		if errorMatches(err, ErrInvalidParameters) {
+			return false, nil
+		}
+		return false, err
 	}
+	for i := range result {
+		if result[i].Address.TrType == node.targetType &&
+			result[i].Address.TrAddr == node.targetAddr &&
+			result[i].Address.TrSvcID == node.targetPort &&
+			result[i].Address.AdrFam == cfgAddrFamily {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
-	err = node.deleteSubsystem(lvol.nqn)
+func (node *nodeNVMf) UnpublishVolume(lvolID string) error {
+	exists, err := node.isVolumeCreated(lvolID)
 	if err != nil {
 		return err
 	}
-
-	lvol.reset()
+	if !exists {
+		return ErrVolumeDeleted
+	}
+	published, err := node.isVolumePublished(lvolID)
+	if err != nil {
+		return err
+	}
+	if !published {
+		// already unpublished
+		return nil
+	}
+	err = node.subsystemRemoveNs(lvolID)
+	if err != nil {
+		// we should try deleting subsystem even if we fail here
+		klog.Errorf("failed to remove namespace(nqn=%s): %s", node.getVolumeNqn(lvolID), err)
+	}
+	err = node.deleteSubsystem(lvolID)
+	if err != nil {
+		return err
+	}
 	klog.V(5).Infof("volume unpublished: %s", lvolID)
 	return nil
 }
 
-func (node *nodeNVMf) createSubsystem(model string) (string, error) {
-	nqn := "nqn.2020-04.io.spdk.csi:uuid:" + model
+func (node *nodeNVMf) getVolumeModel(lvolID string) string {
+	return lvolID
+}
 
+func (node *nodeNVMf) getVolumeNqn(lvolID string) string {
+	return "nqn.2020-04.io.spdk.csi:uuid:" + node.getVolumeModel(lvolID)
+}
+
+func (node *nodeNVMf) createSubsystem(lvolID string) error {
 	params := struct {
 		Nqn          string `json:"nqn"`
 		AllowAnyHost bool   `json:"allow_any_host"`
 		SerialNumber string `json:"serial_number"`
 		ModelNumber  string `json:"model_number"`
 	}{
-		Nqn:          nqn,
+		Nqn:          node.getVolumeNqn(lvolID),
 		AllowAnyHost: cfgAllowAnyHost,
 		SerialNumber: "spdkcsi-sn",
-		ModelNumber:  model, // client matches imported disk with model string
+		ModelNumber:  node.getVolumeModel(lvolID), // client matches imported disk with model string
 	}
 
-	err := node.client.call("nvmf_create_subsystem", &params, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return nqn, nil
+	return node.client.call("nvmf_create_subsystem", &params, nil)
 }
 
-func (node *nodeNVMf) subsystemAddNs(nqn, lvolID string) (int, error) {
+func (node *nodeNVMf) subsystemAddNs(lvolID string) (int, error) {
 	type namespace struct {
 		BdevName string `json:"bdev_name"`
 	}
@@ -248,19 +257,43 @@ func (node *nodeNVMf) subsystemAddNs(nqn, lvolID string) (int, error) {
 		Nqn       string    `json:"nqn"`
 		Namespace namespace `json:"namespace"`
 	}{
-		Nqn: nqn,
+		Nqn: node.getVolumeNqn(lvolID),
 		Namespace: namespace{
 			BdevName: lvolID,
 		},
 	}
-
 	var nsID int
-
 	err := node.client.call("nvmf_subsystem_add_ns", &params, &nsID)
 	return nsID, err
 }
 
-func (node *nodeNVMf) subsystemAddListener(nqn string) error {
+func (node *nodeNVMf) subsystemGetNsID(lvolID string) (int, error) {
+	var results []struct {
+		Nqn       string `json:"nqn"`
+		Namespace []struct {
+			NSID     int    `json:"nsid"`
+			BdevName string `json:"bdev_name"`
+		} `json:"namespaces"`
+	}
+	err := node.client.call("nvmf_get_subsystems", nil, &results)
+	if err != nil {
+		return 0, err
+	}
+	nqn := node.getVolumeNqn(lvolID)
+	for i := range results {
+		result := &results[i]
+		if result.Nqn == nqn {
+			for i := range result.Namespace {
+				if result.Namespace[i].BdevName == lvolID {
+					return result.Namespace[i].NSID, nil
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("no such namespace")
+}
+
+func (node *nodeNVMf) subsystemAddListener(lvolID string) error {
 	type listenAddress struct {
 		TrType  string `json:"trtype"`
 		AdrFam  string `json:"adrfam"`
@@ -272,7 +305,7 @@ func (node *nodeNVMf) subsystemAddListener(nqn string) error {
 		Nqn           string        `json:"nqn"`
 		ListenAddress listenAddress `json:"listen_address"`
 	}{
-		Nqn: nqn,
+		Nqn: node.getVolumeNqn(lvolID),
 		ListenAddress: listenAddress{
 			TrType:  node.targetType,
 			TrAddr:  node.targetAddr,
@@ -284,23 +317,27 @@ func (node *nodeNVMf) subsystemAddListener(nqn string) error {
 	return node.client.call("nvmf_subsystem_add_listener", &params, nil)
 }
 
-func (node *nodeNVMf) subsystemRemoveNs(nqn string, nsID int) error {
+func (node *nodeNVMf) subsystemRemoveNs(lvolID string) error {
+	nsID, err := node.subsystemGetNsID(lvolID)
+	if err != nil {
+		return err
+	}
+
 	params := struct {
 		Nqn  string `json:"nqn"`
 		NsID int    `json:"nsid"`
 	}{
-		Nqn:  nqn,
+		Nqn:  node.getVolumeNqn(lvolID),
 		NsID: nsID,
 	}
-
 	return node.client.call("nvmf_subsystem_remove_ns", &params, nil)
 }
 
-func (node *nodeNVMf) deleteSubsystem(nqn string) error {
+func (node *nodeNVMf) deleteSubsystem(lvolID string) error {
 	params := struct {
 		Nqn string `json:"nqn"`
 	}{
-		Nqn: nqn,
+		Nqn: node.getVolumeNqn(lvolID),
 	}
 
 	return node.client.call("nvmf_delete_subsystem", &params, nil)

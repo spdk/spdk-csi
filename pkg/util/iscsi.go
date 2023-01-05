@@ -17,7 +17,6 @@ package util
 
 import (
 	"fmt"
-	"sync"
 
 	"k8s.io/klog"
 )
@@ -34,16 +33,6 @@ type nodeISCSI struct {
 	client     *rpcClient
 	targetAddr string
 	targetPort string
-	lvols      map[string]*lvolISCSI
-	mtx        sync.Mutex // for concurrent access to lvols map
-}
-
-type lvolISCSI struct {
-	published bool
-}
-
-func (lvol *lvolISCSI) reset() {
-	lvol.published = false
 }
 
 func newISCSI(client *rpcClient, targetAddr string) *nodeISCSI {
@@ -51,7 +40,6 @@ func newISCSI(client *rpcClient, targetAddr string) *nodeISCSI {
 		client:     client,
 		targetAddr: targetAddr,
 		targetPort: cfgISCSISvcPort,
-		lvols:      make(map[string]*lvolISCSI),
 	}
 }
 
@@ -66,9 +54,10 @@ func (node *nodeISCSI) LvStores() ([]LvStore, error) {
 // VolumeInfo returns a string:string map containing information necessary
 // for CSI node(initiator) to connect to this target and identify the disk.
 func (node *nodeISCSI) VolumeInfo(lvolID string) (map[string]string, error) {
-	node.mtx.Lock()
-	_, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
+	exists, err := node.isVolumeCreated(lvolID)
+	if err != nil {
+		return nil, err
+	}
 
 	if !exists {
 		return nil, fmt.Errorf("volume not exists: %s", lvolID)
@@ -83,26 +72,36 @@ func (node *nodeISCSI) VolumeInfo(lvolID string) (map[string]string, error) {
 }
 
 // CreateVolume creates a logical volume and returns volume ID
-func (node *nodeISCSI) CreateVolume(lvsName string, sizeMiB int64) (string, error) {
-	lvolID, err := node.client.createVolume(lvsName, sizeMiB)
+func (node *nodeISCSI) CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error) {
+	// all volume have an alias ID named lvsName/lvolName
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
+	if err == nil {
+		klog.Warningf("volume already created: %s", lvol.UUID)
+		return lvol.UUID, nil
+	}
+
+	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB)
 	if err != nil {
 		return "", err
 	}
-
-	node.mtx.Lock()
-	defer node.mtx.Unlock()
-
-	_, exists := node.lvols[lvolID]
-	if exists {
-		return "", fmt.Errorf("volume ID already exists: %s", lvolID)
-	}
-	node.lvols[lvolID] = &lvolISCSI{}
-
 	klog.V(5).Infof("volume created: %s", lvolID)
 	return lvolID, nil
 }
 
+func (node *nodeISCSI) isVolumeCreated(lvolID string) (bool, error) {
+	return node.client.isVolumeCreated(lvolID)
+}
+
 func (node *nodeISCSI) CreateSnapshot(lvolName, snapshotName string) (string, error) {
+	lvsName, err := node.client.getLvstore(lvolName)
+	if err != nil {
+		return "", err
+	}
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, snapshotName))
+	if err == nil {
+		klog.Warningf("snapshot already created: %s", lvol.UUID)
+		return lvol.UUID, nil
+	}
 	snapshotID, err := node.client.snapshot(lvolName, snapshotName)
 	if err != nil {
 		return "", err
@@ -118,28 +117,25 @@ func (node *nodeISCSI) DeleteVolume(lvolID string) error {
 		return err
 	}
 
-	node.mtx.Lock()
-	defer node.mtx.Unlock()
-
-	delete(node.lvols, lvolID)
-
 	klog.V(5).Infof("volume deleted: %s", lvolID)
 	return nil
 }
 
 // PublishVolume exports a volume through ISCSI target
 func (node *nodeISCSI) PublishVolume(lvolID string) error {
-	var err error
-
-	node.mtx.Lock()
-	lvol, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
-
+	exists, err := node.isVolumeCreated(lvolID)
+	if err != nil {
+		return err
+	}
 	if !exists {
 		return ErrVolumeDeleted
 	}
-	if lvol.published {
-		return ErrVolumePublished
+	published, err := node.isVolumePublished(lvolID)
+	if err != nil {
+		return err
+	}
+	if published {
+		return nil
 	}
 
 	err = node.createPortalGroup()
@@ -158,8 +154,26 @@ func (node *nodeISCSI) PublishVolume(lvolID string) error {
 		return err
 	}
 
-	node.lvols[lvolID].published = true
 	return nil
+}
+
+func (node *nodeISCSI) isVolumePublished(lvolID string) (bool, error) {
+	var result []struct {
+		Name      string `json:"name"`
+		AliasName string `json:"alias_name"`
+	}
+	// TODO: newer version of SPDK supports passing an alias_name parameter for filtering.
+	//       better to add name parameter after the CI's SPDK is upgraded.
+	err := node.client.call("iscsi_get_target_nodes", nil, &result)
+	if err != nil {
+		return false, err
+	}
+	for i := range result {
+		if result[i].AliasName == lvolID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (node *nodeISCSI) createPortalGroup() error {
@@ -191,16 +205,20 @@ func (node *nodeISCSI) createInitiatorGroup() error {
 }
 
 func (node *nodeISCSI) UnpublishVolume(lvolID string) error {
-	var err error
-	node.mtx.Lock()
-	lvol, exists := node.lvols[lvolID]
-	node.mtx.Unlock()
-
+	exists, err := node.isVolumeCreated(lvolID)
+	if err != nil {
+		return err
+	}
 	if !exists {
 		return ErrVolumeDeleted
 	}
-	if !lvol.published {
-		return ErrVolumeUnpublished
+	published, err := node.isVolumePublished(lvolID)
+	if err != nil {
+		return err
+	}
+	if !published {
+		// already unpublished
+		return nil
 	}
 
 	err = node.iscsiDeleteTargetNode(lvolID)
@@ -208,7 +226,6 @@ func (node *nodeISCSI) UnpublishVolume(lvolID string) error {
 		return err
 	}
 
-	lvol.reset()
 	klog.V(5).Infof("volume unpublished: %s", lvolID)
 	return nil
 }
@@ -277,9 +294,12 @@ func (node *nodeISCSI) iscsiCreateTargetNode(targetName, bdevName string) error 
 		DisableChap bool       `json:"disable_chap"`
 		QueueDepth  int        `json:"queue_depth"`
 	}{
-		Luns:        []Luns{{0, bdevName}},
-		Name:        targetName,
-		AliasName:   "iscsi-" + bdevName,
+		Luns: []Luns{{0, bdevName}},
+		Name: targetName,
+		// Set aliasName equal to targetName (which is lvolID) for convenience
+		// so that the function "isVolumePublished" can check if the volume is
+		// already published using aliasName(lvolID) easily.
+		AliasName:   targetName,
 		PgIgMaps:    []PgIgMaps{{numberPortalGroupTag, numberInitiatorGroupTag}},
 		DisableChap: true,
 		QueueDepth:  targetQueueDepth,

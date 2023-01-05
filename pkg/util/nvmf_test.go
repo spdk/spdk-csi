@@ -64,7 +64,7 @@ func testNVMeoF(trType string, t *testing.T) {
 		t.Fatalf("No free space: %s", lvs[0].Name)
 	}
 
-	lvolID, err := node.CreateVolume(lvs[0].Name, lvs[0].FreeSizeMiB)
+	lvolID, err := node.CreateVolume("lvol0", lvs[0].Name, lvs[0].FreeSizeMiB)
 	if err != nil {
 		t.Fatalf("CreateVolume: %s", err)
 	}
@@ -78,10 +78,7 @@ func testNVMeoF(trType string, t *testing.T) {
 		t.Fatalf("PublishVolume: %s", err)
 	}
 
-	nqn := node.lvols[lvolID].nqn
-	nsID := node.lvols[lvolID].nsID
-
-	err = validateVolumePublished(node, nqn, nsID)
+	err = validateVolumePublished(node, lvolID)
 	if err != nil {
 		t.Fatalf("validateVolumePublished: %s", err)
 	}
@@ -110,7 +107,7 @@ func testNVMeoF(trType string, t *testing.T) {
 	if err != nil {
 		t.Fatalf("UnpublishVolume: %s", err)
 	}
-	err = validateVolumeUnpublished(node, nqn, nsID)
+	err = validateVolumeUnpublished(node, lvolID)
 	if err != nil {
 		t.Fatalf("validateVolumeUnpublished: %s", err)
 	}
@@ -126,59 +123,25 @@ func testNVMeoF(trType string, t *testing.T) {
 }
 
 func validateVolumeCreated(node *nodeNVMf, lvolID string) error {
-	params := struct {
-		Name string `json:"name"`
-	}{
-		Name: lvolID,
-	}
-
-	var result []struct {
-		BlockSize int64 `json:"block_size"`
-		NumBlocks int64 `json:"num_blocks"`
-	}
-
-	err := node.client.call("bdev_get_bdevs", &params, &result)
+	created, err := node.isVolumeCreated(lvolID)
 	if err != nil {
 		return err
 	}
-
-	if len(result) == 0 {
+	if !created {
 		return fmt.Errorf("lvol not found: %s", lvolID)
 	}
-
 	return nil
 }
 
-func validateVolumePublished(node *nodeNVMf, nqn string, nsID int) error {
-	type namespace struct {
-		NsID int `json:"nsid"`
-	}
-
-	var results []struct {
-		Nqn         string      `json:"nqn"`
-		ModelNumber string      `json:"model_number"`
-		Namespaces  []namespace `json:"namespaces"`
-	}
-
-	err := node.client.call("nvmf_get_subsystems", nil, &results)
+func validateVolumePublished(node *nodeNVMf, lvolID string) error {
+	published, err := node.isVolumePublished(lvolID)
 	if err != nil {
 		return err
 	}
-
-	for i := range results {
-		result := &results[i]
-		if result.Nqn == nqn {
-			if len(result.Namespaces) != 1 {
-				return fmt.Errorf("#name_spaces != 1")
-			}
-			if result.Namespaces[0].NsID != nsID {
-				return fmt.Errorf("nsid mismatch")
-			}
-			return nil
-		}
+	if !published {
+		return fmt.Errorf("volume not published: %s", lvolID)
 	}
-
-	return fmt.Errorf("nqn not found: %s", nqn)
+	return nil
 }
 
 func validateVolumeDeleted(node *nodeNVMf, lvolID string) error {
@@ -188,8 +151,8 @@ func validateVolumeDeleted(node *nodeNVMf, lvolID string) error {
 	return nil
 }
 
-func validateVolumeUnpublished(node *nodeNVMf, nqn string, nsID int) error {
-	if validateVolumePublished(node, nqn, nsID) == nil {
+func validateVolumeUnpublished(node *nodeNVMf, lvolID string) error {
+	if validateVolumePublished(node, lvolID) == nil {
 		return fmt.Errorf("volume not unpublished")
 	}
 	return nil
