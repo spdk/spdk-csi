@@ -70,6 +70,9 @@ spec:
           mountPath: /dev
         - name: host-sys
           mountPath: /sys
+        - name: spdkcsi-nodeserver-config
+          mountPath: /etc/spdkcsi-nodeserver-config/
+          readOnly: true
       volumes:
       - name: socket-dir
         hostPath:
@@ -93,3 +96,6 @@ spec:
       - name: host-sys
         hostPath:
           path: /sys
+      - name: spdkcsi-nodeserver-config
+        configMap:
+          name: spdkcsi-nodeservercm

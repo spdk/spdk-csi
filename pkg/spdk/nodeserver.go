@@ -47,6 +47,23 @@ type nodeVolume struct {
 }
 
 func newNodeServer(d *csicommon.CSIDriver) *nodeServer {
+	// get spdk sma configs, see deploy/kubernetes/nodeserver-config-map.yaml
+	//nolint:tagliatelle // not using json:snake case
+	var config struct {
+		SmaList []struct {
+			Name       string `json:"name"`
+			TargetType string `json:"targetType"`
+			TargetAddr string `json:"targetAddr"`
+		} `json:"smaList"`
+	}
+
+	ConfigFile := util.FromEnv("SPDKCSI_CONFIG_NODESERVER", "/etc/spdkcsi-nodeserver-config/nodeserver-config.json")
+	err := util.ParseJSONFile(ConfigFile, &config)
+	if err != nil {
+		return nil
+	}
+	klog.Infof("sma configuration is %v", config.SmaList)
+
 	return &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
 		mounter:           mount.New(""),

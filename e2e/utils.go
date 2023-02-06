@@ -25,6 +25,7 @@ const (
 	nodeRbacPath       = yamlDir + "node-rbac.yaml"
 	controllerPath     = yamlDir + "controller.yaml"
 	nodePath           = yamlDir + "node.yaml"
+	nodeConfigPath     = yamlDir + "nodeserver-config-map.yaml"
 	storageClassPath   = yamlDir + "storageclass.yaml"
 	pvcPath            = "pvc.yaml"
 	testPodPath        = "testpod.yaml"
@@ -67,6 +68,7 @@ var csiYamls = []string{
 	controllerPath,
 	nodePath,
 	storageClassPath,
+	nodeConfigPath,
 }
 
 func deployCsi() {
