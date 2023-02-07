@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+address: 'localhost'
+socket: '/var/tmp/spdk.sock'
+port: 5114
+devices:
+- name: 'nvmf_tcp'
