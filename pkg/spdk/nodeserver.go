@@ -21,9 +21,14 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	smarpc "github.com/spdk/sma-goapi/v1alpha1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 	"k8s.io/utils/exec"
@@ -35,9 +40,11 @@ import (
 
 type nodeServer struct {
 	*csicommon.DefaultNodeServer
-	mounter mount.Interface
-	volumes map[string]*nodeVolume
-	mtx     sync.Mutex // protect volumes map
+	mounter       mount.Interface
+	volumes       map[string]*nodeVolume
+	mtx           sync.Mutex // protect volumes map
+	smaClient     smarpc.StorageManagementAgentClient
+	smaTargetType string
 }
 
 type nodeVolume struct {
@@ -62,12 +69,50 @@ func newNodeServer(d *csicommon.CSIDriver) *nodeServer {
 	if err != nil {
 		return nil
 	}
-	klog.Infof("sma configuration is %v", config.SmaList)
+	klog.Infof("SMA configuration is %v.", config.SmaList)
+
+	// try to set up a connection to the first available SMA server in the list via grpc
+	// once the connection is built, send pings every 10 seconds if there is no activity
+	// FIXME (JingYan): when there are multiple IPU nodes, find a better way to choose one SMA server to connect with
+
+	var smaClient smarpc.StorageManagementAgentClient
+	var smaTargetType string
+
+	for i := range config.SmaList {
+		if config.SmaList[i].TargetType != "" && config.SmaList[i].TargetAddr != "" {
+			klog.Infof("SMA TargetType: %v, TargetAddr: %v.", config.SmaList[i].TargetType, config.SmaList[i].TargetAddr)
+			conn, err := grpc.Dial(
+				config.SmaList[i].TargetAddr,
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+				grpc.WithKeepaliveParams(keepalive.ClientParameters{
+					Time:                10 * time.Second,
+					Timeout:             1 * time.Second,
+					PermitWithoutStream: true,
+				}),
+				grpc.FailOnNonTempDialError(true),
+			)
+			if err != nil {
+				klog.Errorf("failed to connect to SMA server in: %s, %s", config.SmaList[i].TargetAddr, err)
+			} else {
+				smaClient = smarpc.NewStorageManagementAgentClient(conn)
+				smaTargetType = config.SmaList[i].TargetType
+				break
+			}
+		} else {
+			klog.Errorf("missing SMA TargetType or TargetAddr in smaList index %d, skipping this SMA server.", i)
+		}
+	}
+	if smaClient == nil && smaTargetType == "" {
+		klog.Infof("failed to connect to any SMA server in the smaList or smaList is empty, will continue without SMA.")
+	}
 
 	return &nodeServer{
 		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
 		mounter:           mount.New(""),
 		volumes:           make(map[string]*nodeVolume),
+		smaClient:         smaClient,
+		smaTargetType:     smaTargetType,
 	}
 }
 
