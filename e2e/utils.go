@@ -7,6 +7,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega" //nolint
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -18,17 +19,19 @@ const (
 	nameSpace = "default"
 
 	// deployment yaml files
-	yamlDir            = "../deploy/kubernetes/"
-	driverPath         = yamlDir + "driver.yaml"
-	secretPath         = yamlDir + "secret.yaml"
-	controllerRbacPath = yamlDir + "controller-rbac.yaml"
-	nodeRbacPath       = yamlDir + "node-rbac.yaml"
-	controllerPath     = yamlDir + "controller.yaml"
-	nodePath           = yamlDir + "node.yaml"
-	nodeConfigPath     = yamlDir + "nodeserver-config-map.yaml"
-	storageClassPath   = yamlDir + "storageclass.yaml"
-	pvcPath            = "pvc.yaml"
-	testPodPath        = "testpod.yaml"
+	yamlDir                  = "../deploy/kubernetes/"
+	driverPath               = yamlDir + "driver.yaml"
+	secretPath               = yamlDir + "secret.yaml"
+	controllerRbacPath       = yamlDir + "controller-rbac.yaml"
+	nodeRbacPath             = yamlDir + "node-rbac.yaml"
+	controllerPath           = yamlDir + "controller.yaml"
+	nodePath                 = yamlDir + "node.yaml"
+	storageClassPath         = yamlDir + "storageclass.yaml"
+	pvcPath                  = "pvc.yaml"
+	testPodPath              = "testpod.yaml"
+	smaNvmfConfigPath        = "sma-nvmf.yaml"
+	multiPvcsPath            = "multi-pvc.yaml"
+	testPodWithMultiPvcsPath = "testpod-multi-pvc.yaml"
 
 	// controller statefulset and node daemonset names
 	controllerStsName = "spdkcsi-controller"
@@ -68,7 +71,6 @@ var csiYamls = []string{
 	controllerPath,
 	nodePath,
 	storageClassPath,
-	nodeConfigPath,
 }
 
 func deployCsi() {
@@ -89,6 +91,20 @@ func deleteCsi() {
 		if err != nil {
 			e2elog.Logf("failed to delete %s: %s", yamlName, err)
 		}
+	}
+}
+
+func deploySmaNvmfConfig() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", smaNvmfConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to create Sma Nvmf configmap %s", err)
+	}
+}
+
+func deleteSmaNvmfConfig() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmfConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to delete Sma Nvmf configmap %s", err)
 	}
 }
 
@@ -125,6 +141,39 @@ func deletePVCAndTestPod() {
 	deletePVC()
 }
 
+func deployTestPodWithMultiPvcs() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", testPodWithMultiPvcsPath)
+	if err != nil {
+		e2elog.Logf("failed to create test pod with multiple pvcs: %s", err)
+	}
+}
+
+func deleteTestPodWithMultiPvcs() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", testPodWithMultiPvcsPath)
+	if err != nil {
+		e2elog.Logf("failed to delete test pod with multiple pvcs: %s", err)
+	}
+}
+
+func deployMultiPvcs() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", multiPvcsPath)
+	if err != nil {
+		e2elog.Logf("failed to create pvcs: %s", err)
+	}
+}
+
+func deleteMultiPvcs() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", multiPvcsPath)
+	if err != nil {
+		e2elog.Logf("failed to delete pvcs: %s", err)
+	}
+}
+
+func deleteMultiPvcsAndTestPodWithMultiPvcs() {
+	deleteTestPodWithMultiPvcs()
+	deleteMultiPvcs()
+}
+
 func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error {
 	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
 		sts, err := c.AppsV1().StatefulSets(nameSpace).Get(ctx, controllerStsName, metav1.GetOptions{})
@@ -159,6 +208,21 @@ func waitForNodeServerReady(c kubernetes.Interface, timeout time.Duration) error
 	return nil
 }
 
+func verifyNodeServerLog(expLogerrMsgMap map[string]string) error {
+	log, err := framework.RunKubectl(nameSpace, "logs", "-l", "app=spdkcsi-node", "-c", "spdkcsi-node", "--tail", "-1")
+	if err != nil {
+		return fmt.Errorf("failed to obtain the log from node server: %w", err)
+	}
+
+	for expLog, errMsg := range expLogerrMsgMap {
+		if !strings.Contains(log, expLog) {
+			return fmt.Errorf(errMsg)
+		}
+	}
+
+	return nil
+}
+
 func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
 		pod, err := c.CoreV1().Pods(nameSpace).Get(ctx, testPodName, metav1.GetOptions{})
@@ -176,6 +240,41 @@ func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 	return nil
 }
 
+func waitForTestPodGone(c kubernetes.Interface) error {
+	err := wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
+		_, err := c.CoreV1().Pods(nameSpace).Get(ctx, testPodName, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for test pod gone: %w", err)
+	}
+	return nil
+}
+
+func waitForPvcGone(c kubernetes.Interface, pvcName string) error {
+	err := wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
+		_, err := c.CoreV1().PersistentVolumeClaims(nameSpace).Get(ctx, pvcName, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for pvc (%s) gone: %w", pvcName, err)
+	}
+	return nil
+}
+
+//nolint:unparam // Currently, "ns" always receives "nameSpace", skip this linter checking
 func execCommandInPod(f *framework.Framework, c, ns string, opt *metav1.ListOptions) (stdOut, stdErr string) {
 	podPot := getCommandInPodOpts(f, c, ns, opt)
 	stdOut, stdErr, err := f.ExecWithOptions(podPot)
@@ -215,8 +314,13 @@ func checkDataPersist(f *framework.Framework) error {
 	execCommandInPod(f, fmt.Sprintf("echo %s > %s", data, dataPath), nameSpace, &opt)
 
 	deleteTestPod()
+	err := waitForTestPodGone(f.ClientSet)
+	if err != nil {
+		return err
+	}
+
 	deployTestPod()
-	err := waitForTestPodReady(f.ClientSet, 5*time.Minute)
+	err = waitForTestPodReady(f.ClientSet, 5*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -228,5 +332,47 @@ func checkDataPersist(f *framework.Framework) error {
 		return fmt.Errorf("data not persistent: expected data %s received data %s ", data, persistData)
 	}
 
+	return err
+}
+
+func checkDataPersistForMultiPvcs(f *framework.Framework) error {
+	dataContents := []string{
+		"Data that needs to be stored to vol1",
+		"Data that needs to be stored to vol2",
+		"Data that needs to be stored to vol3",
+	}
+	// write data to PVC
+	dataPaths := []string{
+		"/spdkvol1/test",
+		"/spdkvol2/test",
+		"/spdkvol3/test",
+	}
+	opt := metav1.ListOptions{
+		LabelSelector: "app=spdkcsi-pvc",
+	}
+	for i := 0; i < len(dataPaths); i++ {
+		execCommandInPod(f, fmt.Sprintf("echo %s > %s", dataContents[i], dataPaths[i]), nameSpace, &opt)
+	}
+
+	deleteTestPodWithMultiPvcs()
+	err := waitForTestPodGone(f.ClientSet)
+	if err != nil {
+		return err
+	}
+
+	deployTestPodWithMultiPvcs()
+	err = waitForTestPodReady(f.ClientSet, 3*time.Minute)
+	if err != nil {
+		return err
+	}
+
+	// read data from PVC
+	for i := 0; i < len(dataPaths); i++ {
+		persistData, stdErr := execCommandInPod(f, fmt.Sprintf("cat %s", dataPaths[i]), nameSpace, &opt)
+		Expect(stdErr).Should(BeEmpty())
+		if !strings.Contains(persistData, dataContents[i]) {
+			return fmt.Errorf("data not persistent: expected data %s received data %s ", dataContents[i], persistData)
+		}
+	}
 	return err
 }

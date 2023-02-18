@@ -3,7 +3,11 @@
 # This common.sh contains all the functions needed for all the e2e tests
 # including, configuring proxies, installing packages and tools, building test images, etc.
 
+# FIXME (JingYan): too many "echo"s, try to define a logger function with different logging levels, including
+# "info", "warning" and "error", etc. and replace all the "echo" with the logger function
+
 SPDK_CONTAINER="spdkdev-e2e"
+SPDK_SMA_CONTAINER="spdkdev-sma"
 
 function export_proxy() {
 	local http_proxies
@@ -66,10 +70,16 @@ function check_os() {
 		echo "failed to load iscsi_tcp kernel module"
 		exit 1
 	fi
+	# check vfio-pci kernel module
+	if ! modprobe -n vfio-pci; then
+		echo "failed to load vfio-pci kernel module"
+		exit 1
+	fi
 }
 
+# allocate 2048*2M hugepages for prepare_spdk() and prepare_sma()
 function allocate_hugepages() {
-	local HUGEPAGES_MIN=1024
+	local HUGEPAGES_MIN=2048
 	local NR_HUGEPAGES=/proc/sys/vm/nr_hugepages
 	if [[ -f ${NR_HUGEPAGES} ]]; then
 		if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
@@ -282,16 +292,19 @@ function prepare_k8s_cluster() {
 	echo "======== prepare k8s cluster with minikube ========"
 	sudo modprobe iscsi_tcp
 	sudo modprobe nvme-tcp
+	sudo modprobe vfio-pci
 	export KUBE_VERSION MINIKUBE_VERSION
 	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" up
 }
 
+# FIXME (JingYan): after starting the container, instead of waiting for a fixed number of seconds before executing commands
+# in the container in the prepare_spdk() and prepare_sma() functions, we could try to do docker exec here and call spdk's rpc.py
+# to try communicating with target. See https://github.com/spdk/spdk/blob/master/test/common/autotest_common.sh#L785
+
 function prepare_spdk() {
-	echo "======== start spdk target ========"
-	# allocate 1024*2M hugepage
-	sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages'
+	echo "======== start spdk target for storage node ========"
 	grep Huge /proc/meminfo
-	# start spdk target
+	# start spdk target for storage node
 	sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm "${SPDKIMAGE}" /root/spdk/build/bin/spdk_tgt
 	sleep 20s
 	# wait for spdk target ready
@@ -302,6 +315,18 @@ function prepare_spdk() {
 	sudo docker exec -i "${SPDK_CONTAINER}" /root/spdk/scripts/rpc.py bdev_lvol_create_lvstore Malloc0 lvs0
 	# start jsonrpc http proxy
 	sudo docker exec -id "${SPDK_CONTAINER}" /root/spdk/scripts/rpc_http_proxy.py "${JSONRPC_IP}" "${JSONRPC_PORT}" "${JSONRPC_USER}" "${JSONRPC_PASS}"
+	sleep 10s
+}
+
+function prepare_sma() {
+	echo "======== start spdk target for IPU node ========"
+	# start spdk target for IPU node
+	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}"
+	sudo docker exec -i "${SPDK_SMA_CONTAINER}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3 &"
+	sleep 20s
+	echo "======== start sma server ========"
+	# start sma server
+	sudo docker exec -d "${SPDK_SMA_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml"
 	sleep 10s
 }
 
@@ -318,12 +343,15 @@ function e2e_test() {
 
 function helm_test() {
 	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || :
+	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
 	make -C "${ROOTDIR}" helm-test
 }
 
 function cleanup() {
 	sudo docker stop "${SPDK_CONTAINER}" || :
 	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || :
+	sudo docker stop "${SPDK_SMA_CONTAINER}" || :
+	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
 	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
 	# TODO: remove dangling nvmf,iscsi disks
 }

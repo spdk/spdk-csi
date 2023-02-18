@@ -63,13 +63,15 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 
 	// get spdk sma configs, see deploy/kubernetes/nodeserver-config-map.yaml
 	// as spdkcsi-nodeservercm configMap volume is optional when deploying k8s, check nodeserver-config-map.yaml is missing or empty
-	ConfigFile := util.FromEnv("SPDKCSI_CONFIG_NODESERVER", "/etc/spdkcsi-nodeserver-config/nodeserver-config.json")
-	_, err := os.Stat(ConfigFile)
+	spdkcsiNodeServerConfigFile := "/etc/spdkcsi-nodeserver-config/nodeserver-config.json"
+	spdkcsiNodeServerConfigFileEnv := "SPDKCSI_CONFIG_NODESERVER"
+	configFile := util.FromEnv(spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile)
+	_, err := os.Stat(configFile)
+	klog.Infof("check whether the configuration file (%s) which is supposed to contain SMA info exists", spdkcsiNodeServerConfigFile)
 	if os.IsNotExist(err) {
-		klog.Infof("configuration file specified in SPDKCSI_CONFIG_NODESERVER (/etc/spdkcsi-node-server-config/node-server-config.json by default) is missing or empty.")
+		klog.Infof("configuration file specified in %s (%s by default) is missing or empty", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile)
 		return ns, nil
 	}
-
 	//nolint:tagliatelle // not using json:snake case
 	var config struct {
 		SmaList []struct {
@@ -79,11 +81,11 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 		} `json:"smaList"`
 	}
 
-	err = util.ParseJSONFile(ConfigFile, &config)
+	err = util.ParseJSONFile(configFile, &config)
 	if err != nil {
-		return nil, fmt.Errorf("error in the configuration file specified in SPDKCSI_CONFIG_NODESERVER (/etc/spdkcsi-node-server-config/node-server-config.json by default): %w", err)
+		return nil, fmt.Errorf("error in the configuration file specified in %s (%s by default): %w", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile, err)
 	}
-	klog.Infof("SMA configuration is %v.", config.SmaList)
+	klog.Infof("obtained SMA info (%v) from configuration file (%s)", config.SmaList, spdkcsiNodeServerConfigFile)
 
 	// try to set up a connection to the first available SMA server in the list via grpc
 	// once the connection is built, send pings every 10 seconds if there is no activity
@@ -109,16 +111,17 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 			if err != nil {
 				klog.Errorf("failed to connect to SMA server in: %s, %s", config.SmaList[i].TargetAddr, err)
 			} else {
+				klog.Infof("connected to SMA server %v with TargetType as %v", config.SmaList[i].TargetAddr, config.SmaList[i].TargetType)
 				smaClient = smarpc.NewStorageManagementAgentClient(conn)
 				smaTargetType = config.SmaList[i].TargetType
 				break
 			}
 		} else {
-			klog.Errorf("missing SMA TargetType or TargetAddr in smaList index %d, skipping this SMA server.", i)
+			klog.Errorf("missing SMA TargetType or TargetAddr in smaList index %d, skipping this SMA server", i)
 		}
 	}
 	if smaClient == nil && smaTargetType == "" {
-		klog.Infof("failed to connect to any SMA server in the smaList or smaList is empty, will continue without SMA.")
+		klog.Infof("failed to connect to any SMA server in the smaList or smaList is empty, will continue without SMA")
 	}
 	ns.smaClient = smaClient
 	ns.smaTargetType = smaTargetType

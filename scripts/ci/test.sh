@@ -14,6 +14,7 @@ build_spdkcsi
 trap cleanup EXIT
 prepare_k8s_cluster
 prepare_spdk
+prepare_sma
 unit_test
 e2e_test
 helm_test

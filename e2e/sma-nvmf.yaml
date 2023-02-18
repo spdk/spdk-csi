@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spdkcsi-nodeservercm
+data:
+  # sma.targetType: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
+  # sma.targetAddr: URL to connect the SMA server on every cluster node,
+  #             http://IPADDR:PORT
+  #             unix:///path/and/sma.sock
+  nodeserver-config.json: |-
+    {
+      "smaList": [
+        {
+          "name": "IPU0",
+          "targetType": "xpu-sma-nvmftcp",
+          "targetAddr": "127.0.0.1:5114"
+        }
+      ]
+    }

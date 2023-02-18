@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spdkcsi-test
+  labels:
+    app: spdkcsi-pvc
+spec:
+  containers:
+  - name: alpine
+    image: alpine:3
+    imagePullPolicy: "IfNotPresent"
+    command: ["sleep", "365d"]
+    volumeMounts:
+    - mountPath: "/spdkvol1"
+      name: spdk-volume1
+    - mountPath: "/spdkvol2"
+      name: spdk-volume2
+    - mountPath: "/spdkvol3"
+      name: spdk-volume3
+  volumes:
+  - name: spdk-volume1
+    persistentVolumeClaim:
+      claimName: spdkcsi-pvc1
+  - name: spdk-volume2
+    persistentVolumeClaim:
+      claimName: spdkcsi-pvc2
+  - name: spdk-volume3
+    persistentVolumeClaim:
+      claimName: spdkcsi-pvc3
