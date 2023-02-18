@@ -134,7 +134,13 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 
 		volume, exists := ns.volumes[volumeID]
 		if !exists {
-			initiator, err := util.NewSpdkCsiInitiator(req.GetVolumeContext())
+			var initiator util.SpdkCsiInitiator
+			var err error
+			if ns.smaClient != nil && ns.smaTargetType != "" {
+				initiator, err = util.NewSpdkCsiSmaInitiator(req.GetVolumeContext(), ns.smaClient, ns.smaTargetType)
+			} else {
+				initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
+			}
 			if err != nil {
 				return nil, err
 			}
