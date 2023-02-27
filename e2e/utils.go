@@ -107,14 +107,14 @@ func deleteTestPod() {
 func deployPVC() {
 	_, err := framework.RunKubectl(nameSpace, "apply", "-f", pvcPath)
 	if err != nil {
-		e2elog.Logf("failed to delete test pod: %s", err)
+		e2elog.Logf("failed to create pvc: %s", err)
 	}
 }
 
 func deletePVC() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", pvcPath)
 	if err != nil {
-		e2elog.Logf("failed to delete test pod: %s", err)
+		e2elog.Logf("failed to delete pvc: %s", err)
 	}
 }
 

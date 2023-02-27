@@ -48,7 +48,7 @@ var _ = ginkgo.Describe("SPDKCSI-ISCSI", func() {
 				}
 			})
 
-			ginkgo.By("create a PVC and bind it to an pod", func() {
+			ginkgo.By("create a PVC and bind it to a pod", func() {
 				deployPVC()
 				deployTestPod()
 				defer deletePVCAndTestPod()
