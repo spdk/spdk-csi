@@ -220,6 +220,66 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
     $ sudo ./minikube.sh clean
   ```
 
+## Storage Management Agent (SMA)
+
+The SPDK Storage Management Agent (SMA) is an application that provides a gRPC interface for configuring and
+exposing storage volumes within an Infrastructure Processing Unit (IPU), commonly referred to xPU in subsequent terminologies.
+
+The diagram below provides a high-level view of the architecture:
+        [Kubernetes nodes]    |    [SPDK storage nodes]
+                              |
+        +---[K8S-Pod]----+    |    +---[xPU-Node]---+
+        |--CSI-Node-Pod--|    |    |---Controller---|
+        |                |    |    |                |
+        | spdk-csi       |    |    |                |
+        | node driver---->--------->--SMA-->-spdk--->---+
+        +----------------+    |    |                |   |
+                              |    +----------------+   |
+        +---[K8S-Pod]----+    |                         |
+        |-CSI-Controller-|    |    +-[Storage-Node]-+   |
+        |                |    |    |-----Target-----|   |
+        | spdk-csi       |    |    |                |   |
+        | driver         |    |    |                |   |
+        | controller----->--------->---->-spdk-<----<---+
+        |                |    |    |                |
+        +----------------+    |    +----------------+
+
+## Usage for SMA
+
+The CSI-Node-Pod's configuration file for SMA is dynamically attached by Kubernetes using a config map as below.
+
+| File Name                                       | Usage                            |
+| ----------------------------------------------- | -------------------------------  |
+| deploy/kubernetes/nodeserver-config-map.yaml    | SPDK xPU cluster configurations  |
+
+You can configure it using the parameters mentioned below.
+Multiple xPU nodes are supported, and each node's configuration includes the name, targetType, and targetAddr fields.
+"targetType": The value can be one of "xpu-sma-nvmftcp", "xpu-sma-virtioblk", or "xpu-sma-nvme".
+"targetAddr": The URL to connect to the SMA server on each cluster node.
+
+Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
+  nodeserver-config.json: |-
+    {
+      "smaList": [
+        {
+          "name": "IPU0",
+          "targetType": "xpu-sma-nvme",
+          "targetAddr":"127.0.0.1:5114"
+        }
+      ]
+    }
+
+### Prerequisites for SMA
+
+On a Fedora-based system, you will need grpcio-tools and protobuf installed.
+
+### Prepare SPDK xPU node
+
+Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK SMA service on localhost.
+
+For the rest steps, you can follow the same steps in "Prepare SPDK storage node", "Deploy SPDKCSI services",
+and "Teardown" above to prepare the SPDK storage node, deploy SPDKCSI driver, and tear down everything.
+
 ## Communication and Contribution
 
 Please join [SPDK community](https://spdk.io/community/) for communication and contribution.
