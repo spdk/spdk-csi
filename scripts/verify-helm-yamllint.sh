@@ -8,6 +8,6 @@ yamllint -s -c scripts/yamllint.yml -f parsable $helmPath/templates/*.yaml | gre
 
 linecount=$(wc -l < $LOG)
 if [ "$linecount" -gt 0 ]; then
-  cat $LOG
-  exit 1
+	cat $LOG
+	exit 1
 fi
