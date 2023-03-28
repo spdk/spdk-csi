@@ -52,7 +52,11 @@ func Run(conf *util.Config) {
 	ids = newIdentityServer(cd)
 
 	if conf.IsNodeServer {
-		ns = newNodeServer(cd)
+		var err error
+		ns, err = newNodeServer(cd)
+		if err != nil {
+			klog.Fatalf("failed to create node server: %s", err)
+		}
 	}
 
 	if conf.IsControllerServer {

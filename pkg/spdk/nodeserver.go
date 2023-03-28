@@ -19,6 +19,7 @@ package spdk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -53,8 +54,22 @@ type nodeVolume struct {
 	tryLock     util.TryLock
 }
 
-func newNodeServer(d *csicommon.CSIDriver) *nodeServer {
+func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
+	ns := &nodeServer{
+		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
+		mounter:           mount.New(""),
+		volumes:           make(map[string]*nodeVolume),
+	}
+
 	// get spdk sma configs, see deploy/kubernetes/nodeserver-config-map.yaml
+	// as spdkcsi-nodeservercm configMap volume is optional when deploying k8s, check nodeserver-config-map.yaml is missing or empty
+	ConfigFile := util.FromEnv("SPDKCSI_CONFIG_NODESERVER", "/etc/spdkcsi-nodeserver-config/nodeserver-config.json")
+	_, err := os.Stat(ConfigFile)
+	if os.IsNotExist(err) {
+		klog.Infof("configuration file specified in SPDKCSI_CONFIG_NODESERVER (/etc/spdkcsi-node-server-config/node-server-config.json by default) is missing or empty.")
+		return ns, nil
+	}
+
 	//nolint:tagliatelle // not using json:snake case
 	var config struct {
 		SmaList []struct {
@@ -64,10 +79,9 @@ func newNodeServer(d *csicommon.CSIDriver) *nodeServer {
 		} `json:"smaList"`
 	}
 
-	ConfigFile := util.FromEnv("SPDKCSI_CONFIG_NODESERVER", "/etc/spdkcsi-nodeserver-config/nodeserver-config.json")
-	err := util.ParseJSONFile(ConfigFile, &config)
+	err = util.ParseJSONFile(ConfigFile, &config)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("error in the configuration file specified in SPDKCSI_CONFIG_NODESERVER (/etc/spdkcsi-node-server-config/node-server-config.json by default): %w", err)
 	}
 	klog.Infof("SMA configuration is %v.", config.SmaList)
 
@@ -106,14 +120,10 @@ func newNodeServer(d *csicommon.CSIDriver) *nodeServer {
 	if smaClient == nil && smaTargetType == "" {
 		klog.Infof("failed to connect to any SMA server in the smaList or smaList is empty, will continue without SMA.")
 	}
+	ns.smaClient = smaClient
+	ns.smaTargetType = smaTargetType
 
-	return &nodeServer{
-		DefaultNodeServer: csicommon.NewDefaultNodeServer(d),
-		mounter:           mount.New(""),
-		volumes:           make(map[string]*nodeVolume),
-		smaClient:         smaClient,
-		smaTargetType:     smaTargetType,
-	}
+	return ns, nil
 }
 
 func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {

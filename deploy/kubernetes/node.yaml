@@ -97,3 +97,4 @@ spec:
       - name: spdkcsi-nodeserver-config
         configMap:
           name: spdkcsi-nodeservercm
+          optional: true
