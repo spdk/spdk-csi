@@ -22,7 +22,7 @@ Once you have deployed Kubernetes, prepare each node in the cluster with some pr
 SPDKCSI image `spdkcsi/spdkcsi:canary` needs to be manually built on all Kubernetes worker nodes before deployment.
 Run the one-liner below on hosts `k8s-node1` and `k8s-node2` where CSI controller and node servers will be scheduled.
 ```bash
-k8s-node1:~$ docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock golang:1.14 bash -c "apt update && apt install -y make git docker.io && git clone https://review.spdk.io/gerrit/spdk/spdk-csi && cd spdk-csi && make image"
+k8s-node1:~$ docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock golang:1.19 bash -c "apt update && apt install -y make git docker.io && git clone https://review.spdk.io/gerrit/spdk/spdk-csi && cd spdk-csi && make image"
 ```
 
 ## Start SPDK service
