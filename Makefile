@@ -80,7 +80,7 @@ shellcheck:
 mdl:
 	@echo === running mdl
 	@if hash mdl 2> /dev/null; then                                      \
-		find ./ -name "*.md" | xargs readlink -f  | xargs mdl --style scripts/ci/mdl_rules.rb; \
+		mdl --git-recurse --style scripts/ci/mdl_rules.rb .;             \
 	else                                                                 \
 	    echo Markdown linter not found, please install;                  \
 	    false                                          ;                 \

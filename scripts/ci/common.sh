@@ -102,13 +102,13 @@ function install_packages_ubuntu() {
 					docker.io \
 					conntrack \
 					socat \
-					wget
+					wget \
+					python3-pip \
+					ruby \
+					git
 	systemctl start docker
-	# install static check tools only on x86 agent
-	if [ "$(arch)" == x86_64 ]; then
-		apt-get install -y python3-pip ruby
-		pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
-	fi
+
+	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
 	gem install mdl -v 0.12.0
 }
 
@@ -121,7 +121,9 @@ function install_packages_fedora() {
 					bind-utils \
 					socat \
 					wget \
-					ruby
+					python3-pip \
+					ruby \
+					git
 	if ! hash docker &> /dev/null; then
 		dnf remove -y docker*
 		dnf install -y dnf-plugins-core
@@ -132,11 +134,7 @@ function install_packages_fedora() {
 	fi
 	systemctl start docker
 
-	# install static check tools only on x86 agent
-	if [ "$(arch)" == x86_64 ]; then
-		dnf install -y python3-pip ruby
-		pip3 install yamllint==1.23.0 shellcheck-py==0.7.1.1
-	fi
+	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
 	gem install mdl -v 0.12.0
 }
 
@@ -281,10 +279,7 @@ function build_spdkcsi() {
 	make clean
 	echo "======== build spdkcsi ========"
 	make -C "${ROOTDIR}" spdkcsi
-	if [ "$(arch)" == "x86_64" ]; then
-		echo "======== static check ========"
-		make -C "${ROOTDIR}" lint
-	fi
+	make -C "${ROOTDIR}" lint
 	echo "======== build container ========"
 	# XXX: should match image name:tag in Makefile
 	sudo docker rmi spdkcsi/spdkcsi:canary > /dev/null || :
