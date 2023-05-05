@@ -281,7 +281,7 @@ func execCommandInPod(f *framework.Framework, c, ns string, opt *metav1.ListOpti
 	if stdErr != "" {
 		e2elog.Logf("stdErr occurred: %v", stdErr)
 	}
-	Expect(err).Should(BeNil())
+	Expect(err).ShouldNot(HaveOccurred())
 	return stdOut, stdErr
 }
 
@@ -290,7 +290,7 @@ func getCommandInPodOpts(f *framework.Framework, c, ns string, opt *metav1.ListO
 	podList, err := f.PodClientNS(ns).List(ctx, *opt)
 	framework.ExpectNoError(err)
 	Expect(podList.Items).NotTo(BeNil())
-	Expect(err).Should(BeNil())
+	Expect(err).ShouldNot(HaveOccurred())
 
 	return framework.ExecOptions{
 		Command:            cmd,
