@@ -19,10 +19,12 @@ package util
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	smarpc "github.com/spdk/sma-goapi/v1alpha1"
+	"github.com/spdk/sma-goapi/v1alpha1/nvme"
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf"
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf_tcp"
 	"k8s.io/klog"
@@ -36,7 +38,7 @@ const (
 	smaNvmfTCPSubNqnPref = "nqn.2022-04.io.spdk.csi:cnode0:uuid:"
 )
 
-func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.StorageManagementAgentClient, smaTargetType string) (SpdkCsiInitiator, error) {
+func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.StorageManagementAgentClient, smaTargetType string, kvmPciBridges int) (SpdkCsiInitiator, error) {
 	iSmaCommon := &smaCommon{
 		smaClient:     smaClient,
 		volumeContext: volumeContext,
@@ -45,6 +47,11 @@ func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.St
 	switch smaTargetType {
 	case "xpu-sma-nvmftcp":
 		return &smainitiatorNvmfTCP{sma: iSmaCommon}, nil
+	case "xpu-sma-nvme":
+		return &smainitiatorNvme{
+			sma:           iSmaCommon,
+			kvmPciBridges: kvmPciBridges,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown SMA targetType: %s", smaTargetType)
 	}
@@ -64,6 +71,11 @@ type smaCommon struct {
 
 type smainitiatorNvmfTCP struct {
 	sma *smaCommon
+}
+
+type smainitiatorNvme struct {
+	sma           *smaCommon
+	kvmPciBridges int
 }
 
 func (sma *smaCommon) ctxTimeout() (context.Context, context.CancelFunc) {
@@ -102,7 +114,7 @@ func (sma *smaCommon) AttachVolume(client smarpc.StorageManagementAgentClient, r
 	if err != nil {
 		return fmt.Errorf("SMA.AttachVolume(%s) error: %w", req, err)
 	}
-	klog.Infof("SMA.AttachVolume(...) => %+v", response)
+	klog.Infof("SMA.AttachVolume(...) <= %+v", response)
 
 	if response == nil {
 		return fmt.Errorf("SMA.AttachVolume(%s) error: nil response", req)
@@ -297,4 +309,120 @@ func (i *smainitiatorNvmfTCP) Disconnect() error {
 		return err
 	}
 	return nil
+}
+
+func (i *smainitiatorNvme) smainitiatorNvmeCleanup() {
+	detachReq := &smarpc.DetachVolumeRequest{
+		VolumeId:     i.sma.volumeID,
+		DeviceHandle: i.sma.deviceHandle,
+	}
+	if err := i.sma.DetachVolume(i.sma.smaClient, detachReq); err != nil {
+		klog.Errorf("SMA.Nvme calling DetachVolume to clean up error: %s", err)
+	}
+}
+
+// For SMA Nvme Connect(), CreateDevice and AttachVolume will be included.
+// - Creates a new device if the deviceHandle is empty, which is an entity that can be used to expose volumes (e.g. an NVMeoF subsystem).
+//   PhysicalId and VirtualId information in SMA Nvme CreateDeviceRequest is supposed to be set according to the xPU hardware.
+//   As we are using KVM case now, in  "deploy/spdk/sma.yaml", the name, buses and count of pci-bridge are configured for vfiouser when starting sma server.
+//   Generally, when using KVM, the VirtualId is always 0, and the range of PhysicalId is from 0 to the sum of buses-counts (namely 64 in our case).
+// - Attach a volume to a specified device will make this volume available through that device.
+//   Once AttachVolume succeeds, a local block device will be available, e.g., /dev/nvme0n1
+
+func (i *smainitiatorNvme) Connect() (string, error) {
+	if err := i.sma.volumeUUID(); err != nil {
+		return "", err
+	}
+
+	// CreateDevice for SMA Nvme
+	devicePath, err := CheckIfNvmeDeviceExists(i.sma.volumeContext["model"], nil)
+	if devicePath != "" {
+		klog.Infof("Found existing device for '%s': %v", i.sma.volumeContext["mode"], devicePath)
+		return devicePath, nil
+	}
+	if !os.IsNotExist(err) {
+		klog.Errorf("failed to detect existing nvme device for '%s'", i.sma.volumeContext["model"])
+	}
+	pf, vf, err := GetNvmeAvailableFunction(i.kvmPciBridges)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
+	}
+	// SMA always expects Vf value as 0. It detects the right KVM bus from Pf value.
+	vPf := pf*32 + vf
+	klog.Infof("Using next available function: %d", vf)
+	createReq := &smarpc.CreateDeviceRequest{
+		Params: &smarpc.CreateDeviceRequest_Nvme{
+			Nvme: &nvme.DeviceParameters{
+				PhysicalId: vPf,
+				VirtualId:  0,
+			},
+		},
+	}
+	if err = i.sma.CreateDevice(i.sma.smaClient, createReq); err != nil {
+		klog.Errorf("SMA.Nvme CreateDevice error: %s", err)
+		return "", err
+	}
+
+	// AttachVolume for SMA Nvme
+	attachReq := &smarpc.AttachVolumeRequest{
+		Volume: &smarpc.VolumeParameters{
+			VolumeId:         i.sma.volumeID,
+			ConnectionParams: i.sma.nvmfVolumeParameters(),
+		},
+		DeviceHandle: i.sma.deviceHandle,
+	}
+	if err = i.sma.AttachVolume(i.sma.smaClient, attachReq); err != nil {
+		klog.Errorf("SMA.Nvme AttachVolume error: %s", err)
+		if delErr := i.sma.DeleteDevice(i.sma.smaClient, &smarpc.DeleteDeviceRequest{
+			Handle: i.sma.deviceHandle,
+		}); delErr != nil {
+			klog.Errorf("Failed to remove device '%s': %v. Review and clean it manually!", delErr, i.sma.deviceHandle)
+		}
+		return "", err
+	}
+
+	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
+	klog.Infof("Waiting still device ready for '%s' at '%s' ...", i.sma.volumeContext["model"], bdf)
+	devicePath, err = GetNvmeDeviceName(i.sma.volumeContext["model"], bdf)
+	if err != nil {
+		klog.Errorf("Could not detect the device: %s", err)
+		i.smainitiatorNvmeCleanup()
+		return "", err
+	}
+
+	return devicePath, nil
+}
+
+// For SMA Nvme Disconnect(), two steps will be included, namely DetachVolume and DeleteDevice.
+
+func (i *smainitiatorNvme) Disconnect() error {
+	// DetachVolume for SMA Nvme
+	devicePath, err := CheckIfNvmeDeviceExists(i.sma.volumeContext["model"], nil)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if devicePath == "" {
+		return nil
+	}
+	detachReq := &smarpc.DetachVolumeRequest{
+		VolumeId:     i.sma.volumeID,
+		DeviceHandle: i.sma.deviceHandle,
+	}
+	if err := i.sma.DetachVolume(i.sma.smaClient, detachReq); err != nil {
+		klog.Errorf("SMA.Nvme DetachVolume error: %s", err)
+		return err
+	}
+
+	// DeleteDevice for SMA Nvme
+	if err := i.sma.DeleteDevice(i.sma.smaClient, &smarpc.DeleteDeviceRequest{
+		Handle: i.sma.deviceHandle,
+	}); err != nil {
+		klog.Errorf("SMA.Nvme DeleteDevice error: %s", err)
+		return err
+	}
+
+	return waitForDeviceGone(devicePath)
 }

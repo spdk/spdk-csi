@@ -14,3 +14,4 @@ DOCKER_MIRROR=mirror.gcr.io
 
 # source code root directory
 ROOTDIR="${DIR}/../.."
+WORKERDIR="${WORKERDIR:-/tmp/qemu-vm}"

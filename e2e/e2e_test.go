@@ -13,8 +13,12 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework/config"
 )
 
+var runXPU bool
+
 func init() {
 	klog.SetOutput(ginkgo.GinkgoWriter)
+
+	flag.BoolVar(&runXPU, "xpu", true, "Run XPU tests")
 
 	if os.Getenv("KUBECONFIG") == "" {
 		kubeConfigPath := filepath.Join(os.Getenv("HOME"), ".kube", "config")

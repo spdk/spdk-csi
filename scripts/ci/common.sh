@@ -6,8 +6,25 @@
 # FIXME (JingYan): too many "echo"s, try to define a logger function with different logging levels, including
 # "info", "warning" and "error", etc. and replace all the "echo" with the logger function
 
+ARCH=$(arch)
+if [[ "$(arch)" == "x86_64" ]]; then
+	ARCH="amd64"
+elif [[ "$(arch)" == "aarch64" ]]; then
+	ARCH="arm64"
+else
+	echo "${ARCH} is not supported"
+	exit 1
+fi
+
 SPDK_CONTAINER="spdkdev-e2e"
 SPDK_SMA_CONTAINER="spdkdev-sma"
+
+vm_qemu_bin=/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64
+vmssh_options="-o StrictHostKeyChecking=accept-new -i $WORKERDIR/id_rsa"
+vmssh="ssh -p 10000 ${vmssh_options}  root@localhost"
+vmssh_nonblock="ssh -p 10000 ${vmssh_options} -o ConnectTimeout=1 root@localhost"
+
+export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:/usr/local/go/bin:${PATH}"
 
 function export_proxy() {
 	local http_proxies
@@ -27,18 +44,6 @@ function export_proxy() {
 }
 
 function check_os() {
-	# check ARCH
-	ARCH=$(arch)
-	if [[ "$(arch)" == "x86_64" ]]; then
-		ARCH="amd64"
-	elif [[ "$(arch)" == "aarch64" ]]; then
-		ARCH="arm64"
-	else
-		echo "${ARCH} is not supported"
-		exit 1
-	fi
-	export ARCH
-
 	# check distro
 	source /etc/os-release
 	case $ID in
@@ -79,15 +84,17 @@ function check_os() {
 
 # allocate 2048*2M hugepages for prepare_spdk() and prepare_sma()
 function allocate_hugepages() {
-	local HUGEPAGES_MIN=2048
+	local HUGEPAGES_MIN=$1
 	local NR_HUGEPAGES=/proc/sys/vm/nr_hugepages
+	sync
+	echo 3 > /proc/sys/vm/drop_caches
 	if [[ -f ${NR_HUGEPAGES} ]]; then
 		if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
-			echo ${HUGEPAGES_MIN} > ${NR_HUGEPAGES} || true
+			echo "${HUGEPAGES_MIN}" > ${NR_HUGEPAGES} || true
 		fi
 		echo "/proc/sys/vm/nr_hugepages: $(< ${NR_HUGEPAGES})"
 		if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
-			echo allocating ${HUGEPAGES_MIN} hugepages failed
+			echo allocating "${HUGEPAGES_MIN}" hugepages failed
 			exit 1
 		fi
 	fi
@@ -105,7 +112,13 @@ function install_packages_ubuntu() {
 					wget \
 					python3-pip \
 					ruby \
-					git
+					git \
+					curl \
+					whois \
+					cloud-image-utils \
+					qemu-utils \
+					genisoimage
+	configure_docker_proxy
 	systemctl start docker
 
 	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
@@ -113,6 +126,9 @@ function install_packages_ubuntu() {
 }
 
 function install_packages_fedora() {
+	systemctl stop dnf-makecache.timer || true
+	systemctl disable dnf-makecache.timer || true
+	systemctl stop dnf-makecache.service || true
 	dnf check-update || true
 	dnf install -y make \
 					gcc \
@@ -123,7 +139,17 @@ function install_packages_fedora() {
 					wget \
 					python3-pip \
 					ruby \
-					git
+					git \
+					mkpasswd \
+					cloud-utils \
+					qemu-img \
+					genisoimage
+	install_docker
+	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
+	gem install mdl -v 0.12.0
+}
+
+function install_docker() {
 	if ! hash docker &> /dev/null; then
 		dnf remove -y docker*
 		dnf install -y dnf-plugins-core
@@ -132,10 +158,8 @@ function install_packages_fedora() {
 		dnf check-update || true
 		dnf install -y docker-ce docker-ce-cli containerd.io
 	fi
+	configure_docker_proxy
 	systemctl start docker
-
-	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
-	gem install mdl -v 0.12.0
 }
 
 function install_golang() {
@@ -151,7 +175,7 @@ function install_golang() {
 	/usr/local/go/bin/go version
 }
 
-function configure_proxy() {
+function configure_docker_proxy() {
 	if [ -n "${DOCKER_MIRROR}" ]; then
 		mkdir -p /etc/docker
 		cat <<EOF > /etc/docker/daemon.json
@@ -197,6 +221,8 @@ function configure_system_fedora() {
 		$iscsi_remove_cmd || true
 	fi
 }
+
+function configure_system_ubuntu() { :; }
 
 function setup_cri_dockerd() {
 	# use the cri-dockerd adapter to integrate Docker Engine with Kubernetes 1.24 or higher version
@@ -275,15 +301,21 @@ function build_spdkimage() {
 }
 
 function build_spdkcsi() {
-	export PATH="/usr/local/go/bin:${PATH}"
-	make clean
+	# comment the following line to prevent error "make: *** No rule to make target 'clean'.  Stop."
+	# make clean
+	set -x
 	echo "======== build spdkcsi ========"
 	make -C "${ROOTDIR}" spdkcsi
 	make -C "${ROOTDIR}" lint
 	echo "======== build container ========"
-	# XXX: should match image name:tag in Makefile
-	sudo docker rmi spdkcsi/spdkcsi:canary > /dev/null || :
-	sudo --preserve-env=PATH,HOME make -C "${ROOTDIR}" image
+	make -C "${ROOTDIR}" image
+}
+
+function build_test_binary() {
+	rm -f "${ROOTDIR}"/e2e/e2e-test || true
+	echo "========== build e2e test binary ======="
+	go mod vendor
+	make -C "${ROOTDIR}" e2e-test E2E_TEST_ARGS="-c -o ./e2e/e2e-test"
 }
 
 function prepare_k8s_cluster() {
@@ -319,12 +351,11 @@ function prepare_spdk() {
 function prepare_sma() {
 	echo "======== start spdk target for IPU node ========"
 	# start spdk target for IPU node
-	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}"
-	sudo docker exec -i "${SPDK_SMA_CONTAINER}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3 &"
+	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3"
 	sleep 20s
 	echo "======== start sma server ========"
 	# start sma server
-	sudo docker exec -d "${SPDK_SMA_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml"
+	sudo docker exec -d -e 'SMA_LOGLEVEL=debug' "${SPDK_SMA_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml > /tmp/sma.log 2>&1"
 	sleep 10s
 }
 
@@ -334,9 +365,8 @@ function unit_test() {
 }
 
 function e2e_test() {
-	echo "======== run E2E test ========"
-	export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:${PATH}"
-	make -C "${ROOTDIR}" e2e-test
+	echo "======== run E2E test (with args $*)========"
+	( cd "${ROOTDIR}"/e2e && ./e2e-test "$*" )
 }
 
 function helm_test() {
@@ -351,5 +381,229 @@ function cleanup() {
 	sudo docker stop "${SPDK_SMA_CONTAINER}" || :
 	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
 	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
-	# TODO: remove dangling nvmf,iscsi disks
+	if [ -f "${WORKERDIR}"/qemu.pid ]; then
+		sudo kill "$(< "${WORKERDIR}"/qemu.pid)" 2>/dev/null || true
+		sudo pkill -9 -f -- 'ssh -p 10000 root@localhost' 2>/dev/null || true
+	fi
+}
+
+function vm_build() {
+	# build oracle qemu
+	[ -f "$vm_qemu_bin" ] && {
+		echo "vm-build: already built: $vm_qemu_bin"
+		return 0
+	}
+	[ -d "${ROOTDIR}"/../spdk ] || git clone https://github.com/spdk/spdk "${ROOTDIR}"/../spdk
+
+	"${ROOTDIR}"/../spdk/test/common/config/autotest_setup.sh -i -u -t qemu
+}
+
+function vm_copy_spdkcsi_image() {
+	local image_name=spdkcsi/spdkcsi:canary
+	if [ ! -f "${WORKERDIR}"/spdkcsi-image.tar.gz ]; then
+		[ "$(sudo docker images -q --filter "reference=${image_name}")" = "" ] && build_spdkcsi
+		sudo docker save ${image_name} -o "${WORKERDIR}"/spdkcsi-image.tar.gz
+	fi
+	sudo cat "${WORKERDIR}"/spdkcsi-image.tar.gz | $vmssh docker load
+}
+
+function vm_copy_test_binary() {
+	echo "======== copy test binary to vm ======"
+	# shellcheck disable=SC2086
+	scp -P 10000 ${vmssh_options} "${ROOTDIR}"/e2e/e2e-test root@localhost:/root/spdk-csi/e2e/
+}
+
+function vm_start() {
+	if [ ! -f "$vm_qemu_bin" ]; then
+		echo "$vm_qemu_bin does not exist."
+		exit 1
+	fi
+
+	if ! $vmssh_nonblock "true"; then
+		__vm_qemu_launch || {
+			echo "vm_qemu_launch failed"
+			return 1
+		}
+	fi
+
+	# Configure proxies
+	local filep
+	local linep
+	local file
+	vars=("filep='' linep='' file='/etc/environment'")
+	vars+=("filep='' linep='export ' file='/etc/profile.d/proxy.sh'")
+	vars+=("filep='[Service]' linep='Environment=' file='/etc/systemd/system/containerd.service.d/proxy.conf'")
+	for var in "${vars[@]}"
+	do
+		(
+			eval "$var"
+			ext_no_proxy=$no_proxy,localhost,127.0.0.1,.internal,10.0.0.0/8,192.168.0.0/16
+			cat <<EOF |
+${filep}
+${linep}http_proxy=${http_proxy:-}
+${linep}https_proxy=${https_proxy:-}
+${linep}no_proxy=$ext_no_proxy
+${linep}HTTP_PROXY=${HTTP_PROXY:-}
+${linep}HTTPS_PROXY=${HTTPS_PROXY:-}
+${linep}NO_PROXY=$ext_no_proxy
+
+EOF
+			$vmssh "mkdir -p $(dirname "$file"); cat > $file"
+		)
+	done
+	set -x
+	# install basic dependencies
+	__vm_install_packages
+
+	# Copy scripts to vm. After this the vm function allows
+	# calling common functions in vm, too.
+	file_name=$(basename "$(realpath "${ROOTDIR}")")
+	tar cz --exclude '*.git*' "${ROOTDIR}"/../"${file_name}" | $vmssh "tar xzf -"
+
+	# Set port forwards from VM to local host.
+	$vmssh -R 9009:localhost:9009 -R 4420:localhost:4420 -R 3260:localhost:3260 -R 4421:localhost:4421 -R 5114:localhost:5114 "sleep inf" &
+}
+
+function vm_stop() {
+	echo "shutting down qemu"
+	$vmssh "shutdown -h now"
+}
+
+function __vm_install_packages() {
+	$vmssh systemctl stop dnf-makecache.timer || true
+	$vmssh systemctl disable dnf-makecache.timer || true
+	$vmssh systemctl stop dnf-makecache.service || true
+	$vmssh dnf check-update || true
+	# These are the least package dependencies to install Minikube cluster
+	$vmssh dnf install -y curl wget conntrack make
+}
+
+function __vm_qemu_launch() {
+	# Prepare the image and cloud-init
+	local fedora_qcow2
+	local cloudisodir
+	local cloud_iso
+	local qemu
+
+	fedora_qcow2=${WORKERDIR}/fedora-cloud-base.qcow2
+	cloudisodir=${WORKERDIR}/cloud-init-iso-root
+	cloud_iso=${WORKERDIR}/seed.iso
+	qemu=${QEMU:-/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64}
+
+	mkdir -p "$(dirname "${fedora_qcow2}")"
+	mkdir -p "${cloudisodir}"
+
+	for required_cmd in curl mkpasswd cloud-localds "${qemu}"; do
+		command -v "${required_cmd}" >/dev/null || {
+			echo "missing: ${required_cmd}"
+			exit 1
+		}
+	done
+
+	if [ ! -f "${fedora_qcow2}" ]; then
+		curl -Lk https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/x86_64/images/Fedora-Cloud-Base-37-1.7.x86_64.qcow2 > "${fedora_qcow2}"
+		echo "Check disk info and resize the qemu VM img"
+		df -h
+		qemu-img resize "${fedora_qcow2}" +20G
+	fi
+
+	[ -f "$WORKERDIR/id_rsa" ] || ssh-keygen -t rsa -f "$WORKERDIR/id_rsa" -P ''
+
+	# Prepare cloud-init
+	[ -f "${cloud_iso}" ] || (
+		cd "${cloudisodir}" || exit
+		echo "instance-id: qemu-vm" > meta_data
+		echo "local-hostname: qemu-vm" >> meta_data
+		cat > user_data << EOF
+#cloud-config
+disable_root: False
+chpasswd: { expire: False }
+ssh_pwauth: True
+users:
+- name: root
+  lock_passwd: False
+  ssh_authorized_keys:
+  - $(< "${WORKERDIR}"/id_rsa.pub)
+chpasswd:
+  expire: False
+  users:
+  - name: root
+    password: "$(echo root | mkpasswd -s)"
+runcmd:
+  - [ mkdir, -p, /etc/default ]
+  - [ touch, /etc/default/grub ]
+  - [ sh, -c, "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} scsi_mod.use_blk_mq=1\"' >> /etc/default/grub" ]
+  - [ grub2-mkconfig, -o, /boot/grub2/grub.cfg ]
+  - [ reboot ]
+EOF
+		cloud-localds "${cloud_iso}" user_data meta_data
+	)
+	[ -f "${cloud_iso}" ] || {
+		echo "failed to create cloud-init image ${cloud_iso}"
+		exit 1
+	}
+
+	echo "checking current RAM info"
+	free -m
+	echo "clear cache"
+	sync; echo 3 > /proc/sys/vm/drop_caches
+	echo "checking current RAM info"
+	free -m
+	echo "setting the hugepage"
+	grep Huge /proc/meminfo
+	rm -f "${WORKERDIR}/*.log"
+
+	qemu_launch_cmd="sudo ${qemu} \
+				-m 8192 --enable-kvm -cpu host \
+				-object memory-backend-file,id=mem,size=8192M,mem-path=/dev/hugepages,share=on \
+				-numa node,memdev=mem \
+				-smp 6 \
+				-nographic \
+				-serial file:${WORKERDIR}/serial.log -D ${WORKERDIR}/qemu.log \
+				-chardev file,path=${WORKERDIR}/seabios.log,id=seabios \
+				-device isa-debugcon,iobase=0x402,chardev=seabios \
+				-net user,hostfwd=tcp::10000-:22,hostfwd=tcp::10001-:8765,hostfwd=tcp::18443-:8443 -net nic \
+				-drive file=${fedora_qcow2},if=none,id=os_disk \
+				-device ide-hd,drive=os_disk,bootindex=0 \
+				-device virtio-scsi-pci,num_queues=2 \
+				-device scsi-hd,drive=hd,vendor=RAWSCSI \
+				-drive if=none,id=hd,file=${cloud_iso},format=raw \
+				-qmp tcp:localhost:9090,server,nowait -device pci-bridge,chassis_nr=1,id=pci.spdk.0 \
+				-device pci-bridge,chassis_nr=2,id=pci.spdk.1 \
+				-device pci-bridge,chassis_nr=3,id=pci.spdk.2 \
+				-device pci-bridge,chassis_nr=4,id=pci.spdk.3"
+	echo "$qemu_launch_cmd" > "${WORKERDIR}/qemu.launch.sh"
+	set -x
+	$qemu_launch_cmd &
+	qemu_pid=$!
+	set +x
+	echo "$qemu_pid" >"${WORKERDIR}/qemu.pid"
+	sleep 1
+
+	if [ -d "/proc/$qemu_pid" ]; then
+		echo "VM started successfully"
+	else
+		echo "VM failed to start"
+		exit 1
+	fi
+
+	# Now the virtual machine is booting up. Wait for ssh to start working
+	if [ ! -f ~/.ssh/known_hosts ]; then
+		touch ~/.ssh/known_hosts
+	fi
+
+	ssh-keygen -R "[localhost]:10000"
+
+	echo "waiting for cloud-init to finish"
+	a=0
+	while ((a++ < 120))
+	do
+		$vmssh_nonblock 'cloud-init status --wait' 2>/dev/null && break
+		sleep 1
+		echo -n "."
+	done
+}
+
+function vm() {
+	$vmssh_nonblock "DIR=spdk-csi/scripts/ci; source \${DIR}/env; source \${DIR}/common.sh; export_proxy; distro=fedora; $*"
 }

@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	smarpc "github.com/spdk/sma-goapi/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,6 +33,8 @@ import (
 	"k8s.io/klog"
 	"k8s.io/utils/exec"
 	"k8s.io/utils/mount"
+
+	smarpc "github.com/spdk/sma-goapi/v1alpha1"
 
 	csicommon "github.com/spdk/spdk-csi/pkg/csi-common"
 	"github.com/spdk/spdk-csi/pkg/util"
@@ -46,6 +47,7 @@ type nodeServer struct {
 	mtx           sync.Mutex // protect volumes map
 	smaClient     smarpc.StorageManagementAgentClient
 	smaTargetType string
+	kvmPciBridges int
 }
 
 type nodeVolume struct {
@@ -79,6 +81,7 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 			TargetType string `json:"targetType"`
 			TargetAddr string `json:"targetAddr"`
 		} `json:"smaList"`
+		KvmPciBridges int `json:"kvmPciBridges,omitempty"`
 	}
 
 	err = util.ParseJSONFile(configFile, &config)
@@ -87,9 +90,12 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 	}
 	klog.Infof("obtained SMA info (%v) from configuration file (%s)", config.SmaList, spdkcsiNodeServerConfigFile)
 
+	ns.kvmPciBridges = config.KvmPciBridges
+	klog.Infof("obtained KvmPciBridges num (%v) from configuration file (%s)", config.KvmPciBridges, spdkcsiNodeServerConfigFile)
+
 	// try to set up a connection to the first available SMA server in the list via grpc
 	// once the connection is built, send pings every 10 seconds if there is no activity
-	// FIXME (JingYan): when there are multiple IPU nodes, find a better way to choose one SMA server to connect with
+	// FIXME (JingYan): when there are multiple xPU nodes, find a better way to choose one SMA server to connect with
 
 	var smaClient smarpc.StorageManagementAgentClient
 	var smaTargetType string
@@ -140,7 +146,7 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 			var initiator util.SpdkCsiInitiator
 			var err error
 			if ns.smaClient != nil && ns.smaTargetType != "" {
-				initiator, err = util.NewSpdkCsiSmaInitiator(req.GetVolumeContext(), ns.smaClient, ns.smaTargetType)
+				initiator, err = util.NewSpdkCsiSmaInitiator(req.GetVolumeContext(), ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
 			} else {
 				initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
 			}

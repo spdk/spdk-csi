@@ -7,3 +7,12 @@ socket: '/var/tmp/spdk.sock'
 port: 5114
 devices:
 - name: 'nvmf_tcp'
+- name: 'vfiouser'
+  params:
+    buses:
+    - name: 'pci.spdk.0'
+      count: 32
+    - name: 'pci.spdk.1'
+      count: 32
+    qmp_addr: 127.0.0.1
+    qmp_port: 9090

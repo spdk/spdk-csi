@@ -44,7 +44,8 @@ install_spdkcsi_helm_charts() {
 	# install spdk-csi-spdkfs and spdk-csi-rbd charts
 	"${HELM}" install --debug --namespace ${NAMESPACE} ${SPDKCSI_CHART_NAME} "${SCRIPT_DIR}"/../charts/spdk-csi
 
-	check_deployment_status spdkdev ${NAMESPACE}
+	# Check SPDKDEV/SPDK storage deployment only when HELM_SKIP_SPDKDEV_CHECK not set
+	[ -z ${HELM_SKIP_SPDKDEV_CHECK+x} ] && check_deployment_status spdkdev ${NAMESPACE}
 	check_daemonset_status spdkcsi-node ${NAMESPACE}
 	check_statefulset_status spdkcsi-controller ${NAMESPACE}
 }

@@ -1,11 +1,13 @@
 #!/bin/bash -e
 
-DIR="$(dirname "$(readlink -f "$0")")"
+DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # shellcheck source=scripts/ci/env
 source "${DIR}/env"
 # shellcheck source=scripts/ci/common.sh
 source "${DIR}/common.sh"
+
+trap cleanup ERR
 
 PROMPT_FLAG=${PROMPT_FLAG:-true}
 
@@ -14,7 +16,11 @@ if [[ $(id -u) != "0" ]]; then
 	exit 1
 fi
 
-while getopts 'yu:p:' optchar; do
+# Prepare VM for running xPU tests on amd64 hosts.
+# To avoid this invoke the script with -x (no vm)
+PREPARE_VM=$(! [ "${ARCH}" == "amd64" ] ; echo $?)
+
+while getopts 'yu:p:x' optchar; do
 	case "$optchar" in
 		y)
 			PROMPT_FLAG=false
@@ -24,6 +30,8 @@ while getopts 'yu:p:' optchar; do
 			;;
 		p)
 			DOCKERHUB_SECRET="$OPTARG"
+			;;
+		x) 	unset PREPARE_VM
 			;;
 		*)
 			echo "$0: invalid argument '$optchar'"
@@ -42,19 +50,40 @@ if $PROMPT_FLAG; then
 		*) exit 0;;
 	esac
 fi
-
+set -x
 export_proxy
 check_os
-allocate_hugepages
+allocate_hugepages 2048
 install_packages_"${distro}"
 install_golang
-configure_proxy
-[ "${distro}" == "fedora" ] && configure_system_fedora
-setup_cri_dockerd
-setup_cni_networking
-stop_host_iscsid
 docker_login
 build_spdkimage
+build_spdkcsi
+build_test_binary
 
+vm=
+# build oracle qemu for nvme
+if [ "$PREPARE_VM" ]; then
+	allocate_hugepages 10240
+	vm_build
+	vm_start
+	vm="vm"
+	distro="fedora"
+	vm "install_golang; install_docker"
+	vm_copy_spdkcsi_image
+	vm_copy_test_binary
+fi
+
+$vm "configure_system_\"${distro}\"; \
+    setup_cri_dockerd; \
+	setup_cni_networking; \
+	stop_host_iscsid; \
+	docker_login"
 # workaround minikube permissions issues when running as root in ci(-like) env
-sysctl fs.protected_regular=0
+$vm sysctl fs.protected_regular=0
+$vm prepare_k8s_cluster
+
+prepare_spdk
+prepare_sma
+
+echo "End of test environment setup!"

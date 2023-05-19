@@ -101,9 +101,15 @@ unit-test:
 
 # e2e test
 .PHONY: e2e-test
+# Pass extra arguments to e2e tests. Could be used
+# to pass -xpu argument and running only fouced tests
+# for quick testing.
+# The below example tests:
+#   make e2e-test E2E_TEST_ARGS='-xpu=true --ginkgo.focus=\"TEST SPDK CSI SMA NVME\"'
+E2E_TEST_ARGS=
 e2e-test:
 	@echo === running e2e test
-	@go test -timeout 30m ./e2e
+	go test -timeout 30m ./e2e $(E2E_TEST_ARGS)
 
 # helm test
 .PHONY: helm-test

@@ -84,7 +84,7 @@ func (nvmf *initiatorNVMf) Connect() (string, error) {
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
-	devicePath, err := waitForDeviceReady(deviceGlob, 20)
+	devicePath, err := waitForDeviceReady(deviceGlob)
 	if err != nil {
 		return "", err
 	}
@@ -101,7 +101,7 @@ func (nvmf *initiatorNVMf) Disconnect() error {
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
-	return waitForDeviceGone(deviceGlob, 20)
+	return waitForDeviceGone(deviceGlob)
 }
 
 type initiatorISCSI struct {
@@ -126,7 +126,7 @@ func (iscsi *initiatorISCSI) Connect() (string, error) {
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-path/*%s*", iscsi.iqn)
-	devicePath, err := waitForDeviceReady(deviceGlob, 20)
+	devicePath, err := waitForDeviceReady(deviceGlob)
 	if err != nil {
 		return "", err
 	}
@@ -143,12 +143,12 @@ func (iscsi *initiatorISCSI) Disconnect() error {
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-path/*%s*", iscsi.iqn)
-	return waitForDeviceGone(deviceGlob, 20)
+	return waitForDeviceGone(deviceGlob)
 }
 
 // wait for device file comes up or timeout
-func waitForDeviceReady(deviceGlob string, seconds int) (string, error) {
-	for i := 0; i <= seconds; i++ {
+func waitForDeviceReady(deviceGlob string) (string, error) {
+	for i := 0; i <= 20; i++ {
 		time.Sleep(time.Second)
 		matches, err := filepath.Glob(deviceGlob)
 		if err != nil {
@@ -163,8 +163,8 @@ func waitForDeviceReady(deviceGlob string, seconds int) (string, error) {
 }
 
 // wait for device file gone or timeout
-func waitForDeviceGone(deviceGlob string, seconds int) error {
-	for i := 0; i <= seconds; i++ {
+func waitForDeviceGone(deviceGlob string) error {
+	for i := 0; i <= 20; i++ {
 		time.Sleep(time.Second)
 		matches, err := filepath.Glob(deviceGlob)
 		if err != nil {

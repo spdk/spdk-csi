@@ -266,7 +266,7 @@ func (client *rpcClient) call(method string, args, result interface{}) error {
 	}
 
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("%s: HTTP error code: %d", method, resp.StatusCode)
 	}
 

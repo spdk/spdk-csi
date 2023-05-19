@@ -30,6 +30,7 @@ const (
 	pvcPath                  = "pvc.yaml"
 	testPodPath              = "testpod.yaml"
 	smaNvmfConfigPath        = "sma-nvmf.yaml"
+	smaNvmeConfigPath        = "sma-nvme.yaml"
 	multiPvcsPath            = "multi-pvc.yaml"
 	testPodWithMultiPvcsPath = "testpod-multi-pvc.yaml"
 
@@ -105,6 +106,20 @@ func deleteSmaNvmfConfig() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmfConfigPath)
 	if err != nil {
 		e2elog.Logf("failed to delete Sma Nvmf configmap %s", err)
+	}
+}
+
+func deploySmaNvmeConfig() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", smaNvmeConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to create Sma Nvme configmap %s", err)
+	}
+}
+
+func deleteSmaNvmeConfig() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmeConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to delete Sma Nvme configmap %s", err)
 	}
 }
 
@@ -208,15 +223,15 @@ func waitForNodeServerReady(c kubernetes.Interface, timeout time.Duration) error
 	return nil
 }
 
-func verifyNodeServerLog(expLogerrMsgMap map[string]string) error {
+func verifyNodeServerLog(expLogList []string) error {
 	log, err := framework.RunKubectl(nameSpace, "logs", "-l", "app=spdkcsi-node", "-c", "spdkcsi-node", "--tail", "-1")
 	if err != nil {
 		return fmt.Errorf("failed to obtain the log from node server: %w", err)
 	}
 
-	for expLog, errMsg := range expLogerrMsgMap {
+	for _, expLog := range expLogList {
 		if !strings.Contains(log, expLog) {
-			return fmt.Errorf(errMsg)
+			return fmt.Errorf("failed to catch the log about %s", expLog)
 		}
 	}
 
