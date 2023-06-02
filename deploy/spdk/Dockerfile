@@ -15,6 +15,6 @@ RUN pip3 install grpcio-tools==1.51.3 protobuf==4.22.1
 RUN cd spdk && \
     ./configure --disable-tests --with-vhost --with-virtio --with-sma --with-vfio-user \
                 --with-rdma --target-arch=${ARCH} && \
-    make
+    make -j$(nproc)
 
 COPY sma.yaml .
