@@ -16,3 +16,12 @@ devices:
       count: 32
     qmp_addr: 127.0.0.1
     qmp_port: 9090
+- name: 'vhost_blk'
+  params:
+    buses:
+    - name: 'pci.spdk.0'
+      count: 32
+    - name: 'pci.spdk.1'
+      count: 32
+    qmp_addr: 127.0.0.1
+    qmp_port: 9090

@@ -283,10 +283,11 @@ function docker_login {
 }
 
 function build_spdkimage() {
-	if docker inspect --type=image "${SPDKIMAGE}" >/dev/null 2>&1; then
-		spdkimage_info="${SPDKIMAGE} image exists, build skipped"
-		echo "========================================================"
-		[ -n "${spdkimage_info}" ] && echo "INFO: ${spdkimage_info}"
+	local force=false
+	[ "$1" = "--force" ] && force=true
+
+	if  ! $force && docker inspect --type=image "${SPDKIMAGE}" >/dev/null 2>&1; then
+		echo "INFO: ${SPDKIMAGE} image exists, build skipped"
 		return
 	fi
 
@@ -297,13 +298,12 @@ function build_spdkimage() {
 	echo "============= building spdk container =============="
 	spdkdir="${ROOTDIR}/deploy/spdk"
 	docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" \
-	"${docker_proxy_opt[@]}" "${spdkdir}" && spdkimage_info="${SPDKIMAGE} image build successfully."
+	"${docker_proxy_opt[@]}" "${spdkdir}" &&  echo "${SPDKIMAGE} image build successfully."
 }
 
 function build_spdkcsi() {
 	# comment the following line to prevent error "make: *** No rule to make target 'clean'.  Stop."
 	# make clean
-	set -x
 	echo "======== build spdkcsi ========"
 	make -C "${ROOTDIR}" spdkcsi
 	make -C "${ROOTDIR}" lint
@@ -420,11 +420,10 @@ function vm_build() {
 
 function vm_copy_spdkcsi_image() {
 	local image_name=spdkcsi/spdkcsi:canary
-	if [ ! -f "${WORKERDIR}"/spdkcsi-image.tar.gz ]; then
-		[ "$(sudo docker images -q --filter "reference=${image_name}")" = "" ] && build_spdkcsi
-		sudo docker save ${image_name} -o "${WORKERDIR}"/spdkcsi-image.tar.gz
-	fi
-	sudo cat "${WORKERDIR}"/spdkcsi-image.tar.gz | $vmssh docker load
+
+	# Build new image either if called with --force or, if no image found
+	[ "$1" == "--force" ] || [ "$(sudo docker images -q --filter "reference=${image_name}")" = "" ] && build_spdkcsi
+	sudo docker save ${image_name} | $vmssh docker load
 }
 
 function vm_copy_test_binary() {

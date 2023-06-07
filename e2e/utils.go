@@ -31,6 +31,7 @@ const (
 	testPodPath              = "testpod.yaml"
 	smaNvmfConfigPath        = "sma-nvmf.yaml"
 	smaNvmeConfigPath        = "sma-nvme.yaml"
+	smaVirtioBlkConfigPath   = "sma-virtioblk.yaml"
 	multiPvcsPath            = "multi-pvc.yaml"
 	testPodWithMultiPvcsPath = "testpod-multi-pvc.yaml"
 
@@ -120,6 +121,20 @@ func deleteSmaNvmeConfig() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmeConfigPath)
 	if err != nil {
 		e2elog.Logf("failed to delete Sma Nvme configmap %s", err)
+	}
+}
+
+func deploySmaVirtioBlkConfig() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", smaVirtioBlkConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to create Sma VirtioBlk configmap %s", err)
+	}
+}
+
+func deleteSmaVirtioBlkConfig() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaVirtioBlkConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to delete Sma VirtioBlk configmap %s", err)
 	}
 }
 

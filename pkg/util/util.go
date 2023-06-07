@@ -188,3 +188,57 @@ func GetNvmeAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
 
 	return 0, 0, os.ErrNotExist
 }
+
+// GetVirtioBlkDevice waits till a block device appears at the
+// given bdf path and returns the device path
+func GetVirtioBlkDevice(bdf string) (string, error) {
+	// The parent dir path of the block device for VirtioBlk should be
+	// in the form of "/sys/bus/pci/drivers/virtio-pci/0000:01:01.0/virtio2/block"
+	sysBusGlob := fmt.Sprintf("/sys/bus/pci/devices/%s/virtio*/block", bdf)
+	deviceParentDirPath, err := waitForDeviceReady(sysBusGlob)
+	if err != nil {
+		klog.Errorf("could not find the deviceParentDirPath (%s): %s", sysBusGlob, err)
+		return "", err
+	}
+
+	// open the parent dir and read the dir for block device for VirtioBlk,
+	// eg, in the form of "vda", which is exactly the device name.
+	deviceName, err := os.ReadDir(deviceParentDirPath)
+	if err != nil {
+		klog.Errorf("could not open the deviceParentDirPath (%s): %s", sysBusGlob, err)
+		return "", err
+	}
+	if len(deviceName) != 1 {
+		return "", fmt.Errorf("the deviceParentDirPath (%s) has wrong content (%s)", sysBusGlob, deviceName)
+	}
+
+	// wait for the block device ready for VirtioBlk, eg, in the form of "/dev/vda"
+	deviceGlob := fmt.Sprintf("/dev/%s", deviceName[0].Name())
+	klog.Infof("deviceGlob %s", deviceGlob)
+	devicePath, err := waitForDeviceReady(deviceGlob)
+	if err != nil {
+		return "", err
+	}
+
+	return devicePath, err
+}
+
+// GetVirtioBlkAvailableFunction returns next available Pf and Vf by checking
+// into sysfs for existing VirtioBlk PCIe devices
+func GetVirtioBlkAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
+	for pf = 1; pf <= uint32(kvmBridgeCount); pf++ {
+		for vf = 0; vf < 32; vf++ { // Assumption is that each PCI bridge supports
+			devicePaths, err := filepath.Glob(fmt.Sprintf("/sys/bus/pci/devices/0000:%02x:%02x.*", pf, vf))
+			if err != nil {
+				return 0, 0, fmt.Errorf("sysfs failure: %w", err)
+			}
+			if devicePaths == nil {
+				// No matching NVMe files found in sysfs, hence use
+				// the first available pf/vf
+				return pf - 1, vf, nil
+			}
+		}
+	}
+
+	return 0, 0, os.ErrNotExist
+}

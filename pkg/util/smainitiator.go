@@ -28,6 +28,7 @@ import (
 	"github.com/spdk/sma-goapi/v1alpha1/nvme"
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf"
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf_tcp"
+	"github.com/spdk/sma-goapi/v1alpha1/virtio_blk"
 	"k8s.io/klog"
 )
 
@@ -50,6 +51,11 @@ func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.St
 		return &smainitiatorNvmfTCP{sma: iSmaCommon}, nil
 	case "xpu-sma-nvme":
 		return &smainitiatorNvme{
+			sma:           iSmaCommon,
+			kvmPciBridges: kvmPciBridges,
+		}, nil
+	case "xpu-sma-virtioblk":
+		return &smainitiatorVirtioBlk{
 			sma:           iSmaCommon,
 			kvmPciBridges: kvmPciBridges,
 		}, nil
@@ -80,6 +86,12 @@ type smainitiatorNvmfTCP struct {
 
 type smainitiatorNvme struct {
 	sma           *smaCommon
+	kvmPciBridges int
+}
+
+type smainitiatorVirtioBlk struct {
+	sma           *smaCommon
+	devicePath    string
 	kvmPciBridges int
 }
 
@@ -432,4 +444,86 @@ func (i *smainitiatorNvme) Disconnect() error {
 	}
 
 	return waitForDeviceGone(devicePath)
+}
+
+func (i *smainitiatorVirtioBlk) smainitiatorVirtioBlkCleanup() {
+	if err := i.sma.DeleteDevice(i.sma.smaClient, &smarpc.DeleteDeviceRequest{Handle: i.sma.deviceHandle}); err != nil {
+		klog.Errorf("SMA.VirtioBlk calling DeleteDevice to clean up error: %s", err)
+	}
+}
+
+// For SMA VirtioBlk Connect(), only CreateDevice is needed, which contains the Volume and PhysicalId/VirtualId info in the request.
+// As we are using KVM case now, in  "deploy/spdk/sma.yaml", the name, buses and count of pci-bridge are configured for vhost_blk when starting sma server.
+// The sma server will talk with qemu VM, which configured with "-device pci-bridge,chassis_nr=1,id=pci.spdk.0, -device pci-bridge,chassis_nr=2,id=pci.spdk.1".
+// Generally, when using KVM, the VirtualId is always 0, and the range of PhysicalId is from 0 to the sum of buses-counts (namely 64 in our case).
+// Once CreateDevice succeeds, a VirtioBlk block device will appear.
+
+func (i *smainitiatorVirtioBlk) Connect() (string, error) {
+	if err := i.sma.volumeUUID(); err != nil {
+		return "", err
+	}
+
+	// FixMe (avalluri): Currently there is no appropriate way to know
+	// if the virtio block device is already created for this request.
+	// Hence depending on the cached 'devicePath', but this might not
+	// work reliably if the driver node driver restarts.
+	if i.devicePath != "" {
+		klog.Infof("Device is already created for '%s': %s", i.sma.volumeID, i.devicePath)
+		return i.devicePath, nil
+	}
+	phyIDLock.Lock()
+	defer phyIDLock.Unlock()
+	pf, vf, err := GetVirtioBlkAvailableFunction(i.kvmPciBridges)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
+	}
+	// SMA always expect Vf value as 0. It detects the right KVM bus from Pf value.
+	physID := pf*32 + vf
+	createReq := &smarpc.CreateDeviceRequest{
+		Volume: &smarpc.VolumeParameters{
+			VolumeId:         i.sma.volumeID,
+			ConnectionParams: i.sma.nvmfVolumeParameters(),
+		},
+		Params: &smarpc.CreateDeviceRequest_VirtioBlk{
+			VirtioBlk: &virtio_blk.DeviceParameters{
+				PhysicalId: physID,
+				VirtualId:  0,
+			},
+		},
+	}
+
+	if err = i.sma.CreateDevice(i.sma.smaClient, createReq); err != nil {
+		klog.Errorf("CreateDevice for SMA VirtioBlk with PhysicalId (%d) error: %s", physID, err)
+		return "", fmt.Errorf("could not CreateDevice for SMA VirtioBlk: %w", err)
+	}
+
+	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
+	devicePath, err := GetVirtioBlkDevice(bdf)
+	if err != nil {
+		klog.Errorf("Failed to detect block device at '%s: %v", bdf, err)
+		i.smainitiatorVirtioBlkCleanup()
+		return "", err
+	}
+	klog.Info("Found block device: ", devicePath)
+
+	i.devicePath = devicePath
+	return devicePath, nil
+}
+
+// For SMA VirtioBlk Disconnect(), only DeleteDevice is needed.
+func (i *smainitiatorVirtioBlk) Disconnect() error {
+	// DeleteDevice for VirtioBlk
+	deleteReq := &smarpc.DeleteDeviceRequest{
+		Handle: i.sma.deviceHandle,
+	}
+	if err := i.sma.DeleteDevice(i.sma.smaClient, deleteReq); err != nil {
+		return err
+	}
+	i.sma.deviceHandle = ""
+	if err := waitForDeviceGone(i.devicePath); err != nil {
+		return fmt.Errorf("remove block device '%s': %w", i.devicePath, err)
+	}
+	i.devicePath = ""
+
+	return nil
 }

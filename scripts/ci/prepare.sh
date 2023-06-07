@@ -57,7 +57,8 @@ allocate_hugepages 2048
 install_packages_"${distro}"
 install_golang
 docker_login
-build_spdkimage
+# shellcheck disable=SC2119
+build_spdkimage "--force"
 build_spdkcsi
 build_test_binary
 
@@ -70,7 +71,7 @@ if [ "$PREPARE_VM" ]; then
 	vm="vm"
 	distro="fedora"
 	vm "install_golang; install_docker"
-	vm_copy_spdkcsi_image
+	vm_copy_spdkcsi_image "--force"
 	vm_copy_test_binary
 fi
 

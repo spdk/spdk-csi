@@ -131,4 +131,38 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 			})
 		})
 	})
+
+	ginkgo.Describe("Test SPDK CSI SMA VirtioBlk", func() {
+		ginkgo.BeforeEach(func() {
+			deployConfigs(xpuControllerConfigMapData)
+			deploySmaVirtioBlkConfig()
+			deployCsi()
+		})
+
+		ginkgo.AfterEach(func() {
+			deleteCsi()
+			deleteSmaVirtioBlkConfig()
+			deleteConfigs()
+		})
+
+		ginkgo.It("SPDKCSI-SMA-VirtioBlk", func() {
+			if !runXPU {
+				ginkgo.Skip("skip SPDKCSI-SMA-VirtioBlk test as runXPU is false")
+			}
+
+			commonTests()
+
+			ginkgo.By("log verification for SMA-VirtioBlk workflow", func() {
+				expLogList := []string{
+					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-virtioblk",
+					"SMA.CreateDevice",
+					"SMA.DeleteDevice",
+				}
+				err := verifyNodeServerLog(expLogList)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+			})
+		})
+	})
 })
