@@ -22,6 +22,7 @@ const (
 
 var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 	f := framework.NewDefaultFramework("spdkcsi")
+	f.SkipNamespaceCreation = true
 
 	commonTests := func() {
 		ginkgo.By("checking controller statefulset is running", func() {
