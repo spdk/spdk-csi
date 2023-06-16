@@ -7,16 +7,21 @@ kind: ConfigMap
 metadata:
   name: spdkcsi-nodeservercm
 data:
-  # sma.targetType: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
-  # sma.targetAddr: URL to connect the SMA server on every cluster node,
-  # kvmPciBridges: used for sma-virtioblk and sma-nvme, the exact num should be
-  #   based on the configuration in "deploy/spdk/sma.yaml" and qemu VM
+  # xpu.targetType:
+  #   - SMA: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
+  # xpu.targetAddr:
+  #   - URL to connect the xPU node through GRPC, IPADDR:PORT
+  #   - 127.0.0.1:5114 for SMA server by default
+  # kvmPciBridges:
+  #   - used by sma-virtioblk, sma-nvme
+  #   - based on the configuration in "deploy/spdk/sma.yaml" and qemu VM
+  #
   # example:
   #  nodeserver-config.json: |-
   #  {
-  #    "smaList": [
+  #    "xpuList": [
   #      {
-  #        "name": "IPU0",
+  #        "name": "xPU0",
   #        "targetType": "xpu-sma-nvmftcp",
   #        "targetAddr": "127.0.0.1:5114"
   #      }
@@ -25,6 +30,6 @@ data:
   #  }
   nodeserver-config.json: |-
     {
-      "smaList": [],
+      "xpuList": [],
       "kvmPciBridges": null
     }

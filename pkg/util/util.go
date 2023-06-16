@@ -33,8 +33,8 @@ import (
 // file name in which volume context is stashed.
 const volumeContextFileName = "volume-context.json"
 
-// file name in which SMA context is stashed.
-const smaContextFileName = "sma-context.json"
+// file name in which XPU context is stashed.
+const xpuContextFileName = "xpu-context.json"
 
 func ParseJSONFile(fileName string, result interface{}) error {
 	file, err := os.Open(fileName)
@@ -159,7 +159,7 @@ func GetNvmeDeviceName(nvmeModel, bdf string) (string, error) {
 	if bdf != "" {
 		var uuidFilePath string
 		// find the uuid file path for the nvme device based on the bdf
-		uuidFilePath, err = waitForDeviceReady(fmt.Sprintf("/sys/bus/pci/devices/%s/nvme/nvme*/nvme*n*/uuid", bdf))
+		uuidFilePath, err = waitForDeviceReady(fmt.Sprintf("/sys/bus/pci/devices/%s/nvme/nvme*/nvme*n*/uuid", bdf), 20)
 		if err != nil {
 			return "", fmt.Errorf("failed find device at %s: %w", uuidFilePath, err)
 		}
@@ -172,7 +172,7 @@ func GetNvmeDeviceName(nvmeModel, bdf string) (string, error) {
 		return "", fmt.Errorf("failed to find nvme device name: %w", err)
 	}
 
-	return waitForDeviceReady("/dev/" + deviceName)
+	return waitForDeviceReady("/dev/"+deviceName, 20)
 }
 
 // GetNvmeAvailableFunction returns next available Pf and Vf by checking
@@ -195,13 +195,20 @@ func GetNvmeAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
 	return 0, 0, os.ErrNotExist
 }
 
-// GetVirtioBlkDevice waits till a block device appears at the
-// given bdf path and returns the device path
-func GetVirtioBlkDevice(bdf string) (string, error) {
+// GetVirtioBlkDevice returns a block device available at the
+// given bdf path. If wait is true then it wait till a device
+// appear at the bdf path.
+func GetVirtioBlkDevice(bdf string, wait bool) (string, error) {
 	// The parent dir path of the block device for VirtioBlk should be
-	// in the form of "/sys/bus/pci/drivers/virtio-pci/0000:01:01.0/virtio2/block"
+	// in the form of "/sys/bus/pci/devices/0000:01:01.0/virtio2/block"
 	sysBusGlob := fmt.Sprintf("/sys/bus/pci/devices/%s/virtio*/block", bdf)
-	deviceParentDirPath, err := waitForDeviceReady(sysBusGlob)
+	var deviceParentDirPath string
+	var err error
+	if wait {
+		deviceParentDirPath, err = waitForDeviceReady(sysBusGlob, 20)
+	} else {
+		deviceParentDirPath, err = waitForDeviceReady(sysBusGlob, 0)
+	}
 	if err != nil {
 		klog.Errorf("could not find the deviceParentDirPath (%s): %s", sysBusGlob, err)
 		return "", err
@@ -221,7 +228,7 @@ func GetVirtioBlkDevice(bdf string) (string, error) {
 	// wait for the block device ready for VirtioBlk, eg, in the form of "/dev/vda"
 	deviceGlob := fmt.Sprintf("/dev/%s", deviceName[0].Name())
 	klog.Infof("deviceGlob %s", deviceGlob)
-	devicePath, err := waitForDeviceReady(deviceGlob)
+	devicePath, err := waitForDeviceReady(deviceGlob, 20)
 	if err != nil {
 		return "", err
 	}
@@ -334,22 +341,22 @@ func CleanUpVolumeContext(path string) error {
 	return cleanUpContext(path, volumeContextFileName)
 }
 
-// StashSMAContext stashes SMA context into the volumeContextFileName at the passed in path, in
+// StashXPUContext stashes XPU context into the volumeContextFileName at the passed in path, in
 // JSON format.
-func StashSMAContext(smaContext map[string]string, path string) error {
-	return stashContext(smaContext, path, smaContextFileName)
+func StashXPUContext(xpuContext map[string]string, path string) error {
+	return stashContext(xpuContext, path, xpuContextFileName)
 }
 
-// LookupSMAContext read and returns stashed SMA context at passed in path
-func LookupSMAContext(path string) (map[string]string, error) {
-	data, err := lookupContext(path, smaContextFileName)
+// LookupXPUContext read and returns stashed XPU context at passed in path
+func LookupXPUContext(path string) (map[string]string, error) {
+	data, err := lookupContext(path, xpuContextFileName)
 	if err != nil {
 		return nil, err
 	}
 	return ConvertInterfaceToMap(data)
 }
 
-// CleanUpSMAContext cleans up any stashed SMA context at passed in path.
-func CleanUpSMAContext(path string) error {
-	return cleanUpContext(path, smaContextFileName)
+// CleanUpXPUContext cleans up any stashed XPU context at passed in path.
+func CleanUpXPUContext(path string) error {
+	return cleanUpContext(path, xpuContextFileName)
 }

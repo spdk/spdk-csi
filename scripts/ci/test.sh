@@ -61,6 +61,5 @@ else
     e2e_test "-xpu=false"
     helm_test
 fi
-
 set +x
 exit 0

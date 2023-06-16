@@ -33,8 +33,6 @@ import (
 	"k8s.io/utils/exec"
 	"k8s.io/utils/mount"
 
-	smarpc "github.com/spdk/sma-goapi/v1alpha1"
-
 	csicommon "github.com/spdk/spdk-csi/pkg/csi-common"
 	"github.com/spdk/spdk-csi/pkg/util"
 )
@@ -43,8 +41,8 @@ type nodeServer struct {
 	*csicommon.DefaultNodeServer
 	mounter       mount.Interface
 	volumeLocks   *util.VolumeLocks
-	smaClient     smarpc.StorageManagementAgentClient
-	smaTargetType string
+	xpuConnClient *grpc.ClientConn
+	xpuTargetType string
 	kvmPciBridges int
 }
 
@@ -55,24 +53,24 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 		volumeLocks:       util.NewVolumeLocks(),
 	}
 
-	// get spdk sma configs, see deploy/kubernetes/nodeserver-config-map.yaml
+	// get xPU nodes' configs, see deploy/kubernetes/nodeserver-config-map.yaml
 	// as spdkcsi-nodeservercm configMap volume is optional when deploying k8s, check nodeserver-config-map.yaml is missing or empty
 	spdkcsiNodeServerConfigFile := "/etc/spdkcsi-nodeserver-config/nodeserver-config.json"
 	spdkcsiNodeServerConfigFileEnv := "SPDKCSI_CONFIG_NODESERVER"
 	configFile := util.FromEnv(spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile)
 	_, err := os.Stat(configFile)
-	klog.Infof("check whether the configuration file (%s) which is supposed to contain SMA info exists", spdkcsiNodeServerConfigFile)
+	klog.Infof("check whether the configuration file (%s) which is supposed to contain xPU info exists", spdkcsiNodeServerConfigFile)
 	if os.IsNotExist(err) {
 		klog.Infof("configuration file specified in %s (%s by default) is missing or empty", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile)
 		return ns, nil
 	}
 	//nolint:tagliatelle // not using json:snake case
 	var config struct {
-		SmaList []struct {
+		XPUList []struct {
 			Name       string `json:"name"`
 			TargetType string `json:"targetType"`
 			TargetAddr string `json:"targetAddr"`
-		} `json:"smaList"`
+		} `json:"xpuList"`
 		KvmPciBridges int `json:"kvmPciBridges,omitempty"`
 	}
 
@@ -80,23 +78,23 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in the configuration file specified in %s (%s by default): %w", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile, err)
 	}
-	klog.Infof("obtained SMA info (%v) from configuration file (%s)", config.SmaList, spdkcsiNodeServerConfigFile)
+	klog.Infof("obtained xPU info (%v) from configuration file (%s)", config.XPUList, spdkcsiNodeServerConfigFile)
 
 	ns.kvmPciBridges = config.KvmPciBridges
 	klog.Infof("obtained KvmPciBridges num (%v) from configuration file (%s)", config.KvmPciBridges, spdkcsiNodeServerConfigFile)
 
-	// try to set up a connection to the first available SMA server in the list via grpc
+	// try to set up a connection to the first available xPU node in the list via grpc
 	// once the connection is built, send pings every 10 seconds if there is no activity
-	// FIXME (JingYan): when there are multiple xPU nodes, find a better way to choose one SMA server to connect with
+	// FIXME (JingYan): when there are multiple xPU nodes, find a better way to choose one to connect with
 
-	var smaClient smarpc.StorageManagementAgentClient
-	var smaTargetType string
+	var xpuConnClient *grpc.ClientConn
+	var xpuTargetType string
 
-	for i := range config.SmaList {
-		if config.SmaList[i].TargetType != "" && config.SmaList[i].TargetAddr != "" {
-			klog.Infof("SMA TargetType: %v, TargetAddr: %v.", config.SmaList[i].TargetType, config.SmaList[i].TargetAddr)
+	for i := range config.XPUList {
+		if config.XPUList[i].TargetType != "" && config.XPUList[i].TargetAddr != "" {
+			klog.Infof("TargetType: %v, TargetAddr: %v.", config.XPUList[i].TargetType, config.XPUList[i].TargetAddr)
 			conn, err := grpc.Dial(
-				config.SmaList[i].TargetAddr,
+				config.XPUList[i].TargetAddr,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithBlock(),
 				grpc.WithKeepaliveParams(keepalive.ClientParameters{
@@ -107,22 +105,22 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 				grpc.FailOnNonTempDialError(true),
 			)
 			if err != nil {
-				klog.Errorf("failed to connect to SMA server in: %s, %s", config.SmaList[i].TargetAddr, err)
+				klog.Errorf("failed to connect to xPU node in: %s, %s", config.XPUList[i].TargetAddr, err)
 			} else {
-				klog.Infof("connected to SMA server %v with TargetType as %v", config.SmaList[i].TargetAddr, config.SmaList[i].TargetType)
-				smaClient = smarpc.NewStorageManagementAgentClient(conn)
-				smaTargetType = config.SmaList[i].TargetType
+				klog.Infof("connected to xPU node %v with TargetType as %v", config.XPUList[i].TargetAddr, config.XPUList[i].TargetType)
+				xpuConnClient = conn
+				xpuTargetType = config.XPUList[i].TargetType
 				break
 			}
 		} else {
-			klog.Errorf("missing SMA TargetType or TargetAddr in smaList index %d, skipping this SMA server", i)
+			klog.Errorf("missing xPU TargetType or TargetAddr in xPUList index %d, skipping this xPU node", i)
 		}
 	}
-	if smaClient == nil && smaTargetType == "" {
-		klog.Infof("failed to connect to any SMA server in the smaList or smaList is empty, will continue without SMA")
+	if xpuConnClient == nil && xpuTargetType == "" {
+		klog.Infof("failed to connect to any xPU node in the xpuList or xpuList is empty, will continue without xPU node")
 	}
-	ns.smaClient = smaClient
-	ns.smaTargetType = smaTargetType
+	ns.xpuConnClient = xpuConnClient
+	ns.xpuTargetType = xpuTargetType
 
 	return ns, nil
 }
@@ -146,10 +144,10 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 	}
 
 	var initiator util.SpdkCsiInitiator
-	if ns.smaClient != nil && ns.smaTargetType != "" {
+	if ns.xpuConnClient != nil && ns.xpuTargetType != "" {
 		vc := req.GetVolumeContext()
 		vc["stagingParentPath"] = stagingParentPath
-		initiator, err = util.NewSpdkCsiSmaInitiator(vc, ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
+		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
 	} else {
 		initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
 	}
@@ -212,10 +210,10 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	var initiator util.SpdkCsiInitiator
-	if ns.smaClient != nil && ns.smaTargetType != "" {
+	if ns.xpuConnClient != nil && ns.xpuTargetType != "" {
 		vc := volumeContext
 		vc["stagingParentPath"] = stagingParentPath
-		initiator, err = util.NewSpdkCsiSmaInitiator(vc, ns.smaClient, ns.smaTargetType, ns.kvmPciBridges)
+		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
 	} else {
 		initiator, err = util.NewSpdkCsiInitiator(volumeContext)
 	}
