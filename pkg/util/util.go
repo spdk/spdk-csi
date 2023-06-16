@@ -172,33 +172,15 @@ func GetNvmeDeviceName(nvmeModel, bdf string) (string, error) {
 		return "", fmt.Errorf("failed to find nvme device name: %w", err)
 	}
 
-	return waitForDeviceReady("/dev/"+deviceName, 20)
-}
+	deviceGlob := fmt.Sprintf("/dev/%s", deviceName)
 
-// GetNvmeAvailableFunction returns next available Pf and Vf by checking
-// into sysfs for existing NVMe PCIe devices
-func GetNvmeAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
-	for pf = 1; pf <= uint32(kvmBridgeCount); pf++ {
-		for vf = 0; vf < 32; vf++ { // Assumption is that each PCI bridge supports
-			devicePaths, err := filepath.Glob(fmt.Sprintf("/sys/bus/pci/devices/0000:%02x:%02x.*", pf, vf))
-			if err != nil {
-				return 0, 0, fmt.Errorf("sysfs failure: %w", err)
-			}
-			if devicePaths == nil {
-				// No matching NVMe files found in sysfs, hence use
-				// the first available pf/vf
-				return pf - 1, vf, nil
-			}
-		}
-	}
-
-	return 0, 0, os.ErrNotExist
+	return waitForDeviceReady(deviceGlob, 20)
 }
 
 // GetVirtioBlkDevice returns a block device available at the
 // given bdf path. If wait is true then it wait till a device
 // appear at the bdf path.
-func GetVirtioBlkDevice(bdf string, wait bool) (string, error) {
+func GetVirtioBlkDeviceName(bdf string, wait bool) (string, error) {
 	// The parent dir path of the block device for VirtioBlk should be
 	// in the form of "/sys/bus/pci/devices/0000:01:01.0/virtio2/block"
 	sysBusGlob := fmt.Sprintf("/sys/bus/pci/devices/%s/virtio*/block", bdf)
@@ -227,18 +209,13 @@ func GetVirtioBlkDevice(bdf string, wait bool) (string, error) {
 
 	// wait for the block device ready for VirtioBlk, eg, in the form of "/dev/vda"
 	deviceGlob := fmt.Sprintf("/dev/%s", deviceName[0].Name())
-	klog.Infof("deviceGlob %s", deviceGlob)
-	devicePath, err := waitForDeviceReady(deviceGlob, 20)
-	if err != nil {
-		return "", err
-	}
 
-	return devicePath, err
+	return waitForDeviceReady(deviceGlob, 20)
 }
 
-// GetVirtioBlkAvailableFunction returns next available Pf and Vf by checking
-// into sysfs for existing VirtioBlk PCIe devices
-func GetVirtioBlkAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
+// GetAvailablePhysicalFunction returns next available Pf and Vf by checking
+// into sysfs for existing NVMe PCIe devices
+func GetAvailablePhysicalFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
 	for pf = 1; pf <= uint32(kvmBridgeCount); pf++ {
 		for vf = 0; vf < 32; vf++ { // Assumption is that each PCI bridge supports
 			devicePaths, err := filepath.Glob(fmt.Sprintf("/sys/bus/pci/devices/0000:%02x:%02x.*", pf, vf))

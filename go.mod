@@ -7,7 +7,9 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
 	github.com/onsi/gomega v1.19.0
+	github.com/opiproject/opi-api v0.0.0-20230728150746-cc0946b7cec4
 	github.com/spdk/sma-goapi v0.0.0
+	github.com/stretchr/testify v1.8.3
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.30.0
 	k8s.io/apimachinery v0.25.0
@@ -94,7 +96,11 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-require k8s.io/api v0.25.0 // indirect
+require (
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.0 // indirect
+	k8s.io/api v0.25.0 // indirect
+)
 
 replace (
 	github.com/spdk/sma-goapi => github.com/askervin/sma-goapi v0.0.0-20230321143408-d7d13ac8a0d7

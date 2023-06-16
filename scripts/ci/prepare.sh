@@ -68,7 +68,6 @@ build_spdkcsi
 build_test_binary
 
 vm=
-# build oracle qemu for nvme
 if [ "${PREPARE_VM}" = yes ]; then
 	allocate_hugepages 10240
 	vm_build
@@ -90,7 +89,7 @@ $vm "docker_login"
 $vm sysctl fs.protected_regular=0
 $vm prepare_k8s_cluster
 
-prepare_spdk
-prepare_sma
+prepare_spdk_storage
+prepare_xpu_node
 
 echo "End of test environment setup!"

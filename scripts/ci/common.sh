@@ -16,8 +16,9 @@ else
 	exit 1
 fi
 
-SPDK_CONTAINER="spdkdev-e2e"
-SPDK_SMA_CONTAINER="spdkdev-sma"
+SPDK_STORAGE_CONTAINER="spdkdev-storage"
+SPDK_XPU_CONTAINER="spdkdev-xpu"
+OPI_SPDK_BRIDGE_CONTAINER="opi-spdk-bridge"
 
 vm_qemu_bin=/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64
 vmssh_options="-o StrictHostKeyChecking=accept-new -i $WORKERDIR/id_rsa"
@@ -82,7 +83,7 @@ function check_os() {
 	fi
 }
 
-# allocate 2048*2M hugepages for prepare_spdk() and prepare_sma()
+# allocate 2048*2M hugepages for prepare_spdk_storage() and prepare_xpu_node()
 function allocate_hugepages() {
 	local HUGEPAGES_MIN=$1
 	local NR_HUGEPAGES=/proc/sys/vm/nr_hugepages
@@ -328,34 +329,37 @@ function prepare_k8s_cluster() {
 }
 
 # FIXME (JingYan): after starting the container, instead of waiting for a fixed number of seconds before executing commands
-# in the container in the prepare_spdk() and prepare_sma() functions, we could try to do docker exec here and call spdk's rpc.py
+# in the container in the prepare_spdk_storage() and prepare_ipu_node() functions, we could try to do docker exec here and call spdk's rpc.py
 # to try communicating with target. See https://github.com/spdk/spdk/blob/master/test/common/autotest_common.sh#L785
 
-function prepare_spdk() {
+function prepare_spdk_storage() {
 	echo "======== start spdk target for storage node ========"
 	grep Huge /proc/meminfo
 	# start spdk target for storage node
-	sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm "${SPDKIMAGE}" /root/spdk/build/bin/spdk_tgt
+	sudo docker run -id --name "${SPDK_STORAGE_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm "${SPDKIMAGE}" /root/spdk/build/bin/spdk_tgt
 	sleep 20s
 	# wait for spdk target ready
-	sudo docker exec -i "${SPDK_CONTAINER}" timeout 5s /root/spdk/scripts/rpc.py framework_wait_init
+	sudo docker exec -i "${SPDK_STORAGE_CONTAINER}" timeout 5s /root/spdk/scripts/rpc.py framework_wait_init
 	# create 1G malloc bdev
-	sudo docker exec -i "${SPDK_CONTAINER}" /root/spdk/scripts/rpc.py bdev_malloc_create -b Malloc0 1024 4096
+	sudo docker exec -i "${SPDK_STORAGE_CONTAINER}" /root/spdk/scripts/rpc.py bdev_malloc_create -b Malloc0 1024 4096
 	# create lvstore
-	sudo docker exec -i "${SPDK_CONTAINER}" /root/spdk/scripts/rpc.py bdev_lvol_create_lvstore Malloc0 lvs0
+	sudo docker exec -i "${SPDK_STORAGE_CONTAINER}" /root/spdk/scripts/rpc.py bdev_lvol_create_lvstore Malloc0 lvs0
 	# start jsonrpc http proxy
-	sudo docker exec -id "${SPDK_CONTAINER}" /root/spdk/scripts/rpc_http_proxy.py "${JSONRPC_IP}" "${JSONRPC_PORT}" "${JSONRPC_USER}" "${JSONRPC_PASS}"
+	sudo docker exec -id "${SPDK_STORAGE_CONTAINER}" /root/spdk/scripts/rpc_http_proxy.py "${JSONRPC_IP}" "${JSONRPC_PORT}" "${JSONRPC_USER}" "${JSONRPC_PASS}"
 	sleep 10s
 }
 
-function prepare_sma() {
-	echo "======== start spdk target for IPU node ========"
-	# start spdk target for IPU node
-	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3"
+function prepare_xpu_node() {
+	echo "======== start spdk target for xPU node ========"
+	# start spdk target for xPU node
+	sudo docker run -id --name "${SPDK_XPU_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3"
 	sleep 20s
 	echo "======== start sma server ========"
 	# start sma server
-	sudo docker exec -d -e 'SMA_LOGLEVEL=debug' "${SPDK_SMA_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml > /tmp/sma.log 2>&1"
+	sudo docker exec -d -e 'SMA_LOGLEVEL=debug' "${SPDK_XPU_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml > /tmp/sma.log 2>&1"
+	sleep 10s
+	echo "======== start opi-spdk-bridge ========"
+	sudo docker run -id --name "${OPI_SPDK_BRIDGE_CONTAINER}" --net host -v /var/tmp/:/var/tmp/ "${OPIIMAGE}" /opi-spdk-bridge -port=50051 -kvm=true -qmp_addr=127.0.0.1:9090 -spdk_addr=/var/tmp/spdk.sock -ctrlr_dir=/var/tmp -tcp_trid=127.0.0.1:4420 -buses=pci.spdk.0:pci.spdk.1
 	sleep 10s
 }
 
@@ -370,28 +374,33 @@ function e2e_test() {
 }
 
 function helm_test() {
-	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || :
-	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
+	sudo docker rm -f "${SPDK_STORAGE_CONTAINER}" > /dev/null || :
+	sudo docker rm -f "${SPDK_XPU_CONTAINER}" > /dev/null || :
+	sudo docker rm -f "${OPI_SPDK_BRIDGE_CONTAINER}" > /dev/null || :
 	make -C "${ROOTDIR}" helm-test
 }
 
 function dump_logs() {
 	# dump the logs of the containers, in case the containers exit unexpectedly
 	echo "======== logs for spdk storage node - spdk_tgt ========"
-	sudo docker logs "${SPDK_CONTAINER}" || true
+	sudo docker logs "${SPDK_STORAGE_CONTAINER}" || true
 	echo "======== logs for spdk xpu node - spdk_tgt ========"
-	sudo docker logs "${SPDK_SMA_CONTAINER}" || true
+	sudo docker logs "${SPDK_XPU_CONTAINER}" || true
 	echo "======== logs for spdk xpu node - sma server ========"
-	sudo docker exec -i "${SPDK_SMA_CONTAINER}" cat /tmp/sma.log || true
+	sudo docker exec -i "${SPDK_XPU_CONTAINER}" cat /tmp/sma.log || true
+	echo "======== logs for opi-spdk-bridge node ========"
+	sudo docker logs "${OPI_SPDK_BRIDGE_CONTAINER}" || true
 	echo "======== end of dump_logs ========"
 }
 
 function cleanup() {
-	# clean up the spdk storage container and spdk xpu container
-	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || true
-	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || true
-	# clean up the vm if it is created for xpu e2e tests, otherwise,
-	# clean the minikube k8s cluster on the host
+	sudo docker stop "${SPDK_STORAGE_CONTAINER}" || :
+	sudo docker rm -f "${SPDK_STORAGE_CONTAINER}" > /dev/null || :
+	sudo docker stop "${SPDK_XPU_CONTAINER}" || :
+	sudo docker rm -f "${SPDK_XPU_CONTAINER}" > /dev/null || :
+	sudo docker stop "${OPI_SPDK_BRIDGE_CONTAINER}" || :
+	sudo docker rm -f "${OPI_SPDK_BRIDGE_CONTAINER}" > /dev/null || :
+	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
 	if [ -f "${WORKERDIR}"/qemu.pid ]; then
 		sudo kill "$(< "${WORKERDIR}"/qemu.pid)" 2>/dev/null || true
 		sudo pkill -9 -f -- 'ssh -p 10000 root@localhost' 2>/dev/null || true
@@ -480,7 +489,9 @@ EOF
 	tar cz --exclude '*.git*' "${ROOTDIR}"/../"${file_name}" | $vmssh "tar xzf -"
 
 	# Set port forwards from VM to local host.
-	$vmssh -R 9009:localhost:9009 -R 4420:localhost:4420 -R 3260:localhost:3260 -R 4421:localhost:4421 -R 5114:localhost:5114 "sleep inf" &
+	forward_ports="9009 3260 4420 4421 5114 50051"
+	# shellcheck disable=SC2046
+	$vmssh $(for port in ${forward_ports}; do echo -n "-R ${port}:localhost:${port} "; done) "sleep inf" &
 }
 
 function vm_stop() {
@@ -588,9 +599,7 @@ EOF
 				-device scsi-hd,drive=hd,vendor=RAWSCSI \
 				-drive if=none,id=hd,file=${cloud_iso},format=raw \
 				-qmp tcp:localhost:9090,server,nowait -device pci-bridge,chassis_nr=1,id=pci.spdk.0 \
-				-device pci-bridge,chassis_nr=2,id=pci.spdk.1 \
-				-device pci-bridge,chassis_nr=3,id=pci.spdk.2 \
-				-device pci-bridge,chassis_nr=4,id=pci.spdk.3"
+				-device pci-bridge,chassis_nr=2,id=pci.spdk.1"
 	echo "$qemu_launch_cmd" > "${WORKERDIR}/qemu.launch.sh"
 	set -x
 	$qemu_launch_cmd &

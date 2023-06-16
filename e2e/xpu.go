@@ -179,4 +179,84 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 			})
 		})
 	})
+
+	ginkgo.Describe("Test SPDK CSI OPI NVME", func() {
+		ginkgo.BeforeEach(func() {
+			deployConfigs(xpuControllerConfigMapData)
+			deployOpiNvmeConfig()
+			deployCsi()
+		})
+
+		ginkgo.AfterEach(func() {
+			deleteCsi()
+			deleteOpiNvmeConfig()
+			deleteConfigs()
+		})
+
+		ginkgo.It("SPDKCSI-OPI-NVME", func() {
+			if !runXPU {
+				ginkgo.Skip("skip SPDKCSI-OPI-NVME test as runXPU is false")
+			}
+
+			commonTests()
+
+			ginkgo.By("log verification for OPI-NVME workflow", func() {
+				expLogList := []string{
+					"connected to xPU node 127.0.0.1:50051 with TargetType as xpu-opi-nvme",
+					"OPI.CreateNvmeSubsystem",
+					"OPI.CreateNvmeController",
+					"OPI.CreateNvmeRemoteController",
+					"OPI.CreateNVMfPath",
+					"OPI.CreateNvmeNamespace",
+					"OPI.DeleteNvmeNamespace",
+					"OPI.DeleteNvmeRemoteController",
+					"OPI.DeleteNVMfPath",
+					"OPI.DeleteNvmeController",
+					"OPI.DeleteNvmeSubsystem",
+				}
+				err := verifyNodeServerLog(expLogList)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+			})
+		})
+	})
+
+	ginkgo.Describe("Test SPDK CSI OPI VirtioBlk", func() {
+		ginkgo.BeforeEach(func() {
+			deployConfigs(xpuControllerConfigMapData)
+			deployOpiVirtioBlkConfig()
+			deployCsi()
+		})
+
+		ginkgo.AfterEach(func() {
+			deleteCsi()
+			deleteOpiVirtioBlkConfig()
+			deleteConfigs()
+		})
+
+		ginkgo.It("SPDKCSI-OPI-VirtioBlk", func() {
+			if !runXPU {
+				ginkgo.Skip("skip SPDKCSI-OPI-VirtioBlk test as runXPU is false")
+			}
+
+			commonTests()
+
+			ginkgo.By("log verification for OPI-VirtioBlk workflow", func() {
+				expLogList := []string{
+					"connected to xPU node 127.0.0.1:50051 with TargetType as xpu-opi-virtioblk",
+					"OPI.CreateNvmeRemoteController",
+					"OPI.CreateVirtioBlk",
+					"OPI.CreateNVMfPath",
+					"OPI.DeleteNVMfPath",
+					"OPI.DeleteVirtioBlk",
+					"OPI.DeleteNvmeRemoteController",
+				}
+				err := verifyNodeServerLog(expLogList)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+			})
+		})
+	})
 })

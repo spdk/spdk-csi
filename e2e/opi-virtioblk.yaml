@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spdkcsi-nodeservercm
+data:
+  nodeserver-config.json: |-
+    {
+      "xpuList": [
+        {
+          "name": "xPU0",
+          "targetType": "xpu-opi-virtioblk",
+          "targetAddr": "127.0.0.1:50051"
+        }
+      ],
+      "kvmPciBridges": 2
+    }

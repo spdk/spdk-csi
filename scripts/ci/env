@@ -5,6 +5,11 @@ CRITOOLS_VERSION=v1.25.0
 CRIDOCKERD_VERSION=0.2.5
 CNIPLUGIN_VERSION=v1.1.1
 SPDKIMAGE=spdkdev:latest
+
+# FIXME(avalluri): Using 'main' image instead of release image as the latest (v0.1.1) does support KVM.
+# Move to release v0.1.2+ image once it is available.
+OPIIMAGE=opiproject/opi-spdk-bridge@sha256:573217ac276e2c8a8d4e8a26acfba444843ac22b74efef2a1a37ceea9b570b38
+
 JSONRPC_IP=127.0.0.1
 JSONRPC_PORT=9009
 JSONRPC_USER=spdkcsiuser

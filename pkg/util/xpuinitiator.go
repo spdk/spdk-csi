@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -26,6 +27,7 @@ import (
 
 const (
 	xpuTargetBackendSma  = "sma"
+	xpuTargetBackendOpi  = "opi"
 	xpuNvmfTCPTargetType = "tcp"
 	xpuNvmfTCPAdrFam     = "ipv4"
 	xpuNvmfTCPTargetAddr = "127.0.0.1"
@@ -68,6 +70,10 @@ type xpuInitiator struct {
 
 var _ SpdkCsiInitiator = &xpuInitiator{}
 
+// phyIDLock used to synchronize physical function usage
+// between concurrent Connect{Nmve,VirtioBlk}() calls.
+var phyIDLock sync.Mutex
+
 func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc.ClientConn, xpuTargetType string, kvmPciBridges int) (SpdkCsiInitiator, error) {
 	targetInfo, err := parseSpdkXpuTargetType(xpuTargetType)
 	if err != nil {
@@ -86,6 +92,8 @@ func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc
 	switch targetInfo.Backend {
 	case xpuTargetBackendSma:
 		backend, err = NewSpdkCsiSmaInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXPUContext)
+	case xpuTargetBackendOpi:
+		backend, err = NewSpdkCsiOpiInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXPUContext)
 	default:
 		return nil, fmt.Errorf("unknown target type: %q", targetInfo.Backend)
 	}
@@ -112,12 +120,12 @@ func (xpu *xpuInitiator) saveXPUContext() error {
 }
 
 func (xpu *xpuInitiator) tryGetXPUContext() (map[string]string, error) {
-	xpuContext, err := LookupXPUContext(xpu.volumeContext["stagingParentPath"])
+	xPUContext, err := LookupXPUContext(xpu.volumeContext["stagingParentPath"])
 	if err != nil {
 		return nil, fmt.Errorf("loadXPUContext() error: %w", err)
 	}
-	xpu.devicePath = xpuContext["devicePath"]
-	return xpuContext, nil
+	xpu.devicePath = xPUContext["devicePath"]
+	return xPUContext, nil
 }
 
 func (xpu *xpuInitiator) Connect( /*ctx *context.Context*/ ) (string, error) {
@@ -170,7 +178,7 @@ func (xpu *xpuInitiator) ConnectNvmfTCP(ctx context.Context) (string, error) {
 	return devicePath, nil
 }
 
-// ConnectNvme connects to nvme volume using one of 'vfiouser' transport protocol.
+// ConnectNvme connects to volume using one of 'vfiouser' transport protocol.
 // It uses for the available PCI bridge function for connecting the device.
 // On success it returns the block device path on host.
 func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
@@ -182,13 +190,21 @@ func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
 	if !os.IsNotExist(err) {
 		klog.Errorf("failed to detect existing nvme device for '%s'", xpu.volumeContext["model"])
 	}
-	pf, vf, err := GetNvmeAvailableFunction(xpu.kvmPciBridges)
+
+	var pf uint32
+	var vf uint32
+	var vPf uint32
+
+	phyIDLock.Lock()
+	defer phyIDLock.Unlock()
+	pf, vf, err = GetAvailablePhysicalFunction(xpu.kvmPciBridges)
 	if err != nil {
-		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
+		return "", fmt.Errorf("failed to detect free Nvme virtual function: %w", err)
 	}
-	// SMA always expects Vf value as 0. It detects the right KVM bus from Pf value.
-	vPf := pf*32 + vf
-	klog.Infof("Using next available function: %d", vf)
+
+	// Both SMA and OPI always expect Vf value as 0 and detect the right KVM bus from Pf value.
+	vPf = pf*32 + vf
+	klog.Infof("Using next available functions, pf: %d, vf: %d", pf, vf)
 
 	// Ask the backed to connect to the volume
 	if err = xpu.backend.Connect(ctx, &ConnectParams{vPf: vPf}); err != nil {
@@ -196,7 +212,7 @@ func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
 	}
 
 	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
-	klog.Infof("Waiting still device ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdf)
+	klog.Infof("Waiting till the device is ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdf)
 	devicePath, err = GetNvmeDeviceName(xpu.volumeContext["model"], bdf)
 	if err != nil {
 		klog.Errorf("Could not detect the device: %s", err)
@@ -205,22 +221,31 @@ func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
+	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdf)
 	xpu.devicePath = devicePath
 
 	return devicePath, nil
 }
 
-// ConnectVirtioBlk connects to nvme volume using one of 'virtio-blk' transport protocol.
+// ConnectVirtioBlk connects to volume using one of 'virtio-blk' transport protocol.
 // It uses for the available PCI bridge function for connecting the device.
 // On success it returns the block device path on host.
 func (xpu *xpuInitiator) ConnectVirtioBlk(ctx context.Context) (string, error) {
-	pf, vf, err := GetVirtioBlkAvailableFunction(xpu.kvmPciBridges)
+	var pf uint32
+	var vf uint32
+	var vPf uint32
+
+	phyIDLock.Lock()
+	defer phyIDLock.Unlock()
+
+	var err error
+	pf, vf, err = GetAvailablePhysicalFunction(xpu.kvmPciBridges)
 	if err != nil {
 		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
 	}
-	// SMA always expects Vf value as 0. It detects the right KVM bus from Pf value.
-	vPf := pf*32 + vf
-	klog.Infof("Using next available function: %d", vf)
+	// Both SMA and OPI always expect Vf value as 0 and detect the right KVM bus from Pf value.
+	vPf = pf*32 + vf
+	klog.Infof("Using next available functions, pf: %d, vf: %d", pf, vf)
 
 	// Ask the backed to connect to the volume
 	if err = xpu.backend.Connect(ctx, &ConnectParams{vPf: vPf}); err != nil {
@@ -230,7 +255,7 @@ func (xpu *xpuInitiator) ConnectVirtioBlk(ctx context.Context) (string, error) {
 	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
 	klog.Infof("Waiting still device ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdf)
 	var devicePath string
-	devicePath, err = GetVirtioBlkDevice(bdf, true)
+	devicePath, err = GetVirtioBlkDeviceName(bdf, true)
 	if err != nil {
 		klog.Errorf("Could not detect the device: %s", err)
 		if errx := xpu.backend.Disconnect(ctx); errx != nil {
@@ -238,6 +263,7 @@ func (xpu *xpuInitiator) ConnectVirtioBlk(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
+	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdf)
 	xpu.devicePath = devicePath
 
 	return devicePath, nil

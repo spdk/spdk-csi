@@ -150,7 +150,6 @@ func (iscsi *initiatorISCSI) Disconnect() error {
 // otherwise, wait for device file comes up or timeout
 func waitForDeviceReady(deviceGlob string, seconds int) (string, error) {
 	for i := 0; i <= seconds; i++ {
-		time.Sleep(time.Second)
 		matches, err := filepath.Glob(deviceGlob)
 		if err != nil {
 			return "", err
@@ -159,6 +158,7 @@ func waitForDeviceReady(deviceGlob string, seconds int) (string, error) {
 		if len(matches) >= 1 {
 			return matches[0], nil
 		}
+		time.Sleep(time.Second)
 	}
 	return "", fmt.Errorf("timed out waiting device ready: %s", deviceGlob)
 }
@@ -166,7 +166,6 @@ func waitForDeviceReady(deviceGlob string, seconds int) (string, error) {
 // wait for device file gone or timeout
 func waitForDeviceGone(deviceGlob string) error {
 	for i := 0; i <= 20; i++ {
-		time.Sleep(time.Second)
 		matches, err := filepath.Glob(deviceGlob)
 		if err != nil {
 			return err
@@ -174,6 +173,7 @@ func waitForDeviceGone(deviceGlob string) error {
 		if len(matches) == 0 {
 			return nil
 		}
+		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("timed out waiting device gone: %s", deviceGlob)
 }
