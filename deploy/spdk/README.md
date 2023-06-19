@@ -61,3 +61,24 @@ sudo docker exec -id spdkdev_sma sh -c \
 # start sma server
 sudo docker exec -id spdkdev_sma sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml"
 ```
+
+## Step by step to launch a SPDK xPU node with OPI
+
+```bash
+# start spdkdev_opi container
+sudo docker run -it --rm --name spdkdev_opi --privileged --net host -v /dev/hugepages:/dev/hugepages \
+-v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules spdkdev
+
+# run below commands in another console
+# start spdk target
+sudo docker exec -id spdkdev_opi sh -c \
+"/root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3 &"
+
+# create VFIOUSER NVMf transport
+sudo docker exec -i spdkdev_opi /root/spdk/scripts/rpc.py nvmf_create_transport -t VFIOUSER
+
+# start opi-spdk-bridge container
+sudo docker run -id --name opi-spdk-bridge --net host -v /var/tmp/:/var/tmp/ "${OPIIMAGE}" /opi-spdk-bridge \
+-port=50051 -kvm=true -qmp_addr=127.0.0.1:9090 -spdk_addr=/var/tmp/spdk.sock -ctrlr_dir=/var/tmp \
+-tcp_trid=127.0.0.1:4420 -buses=pci.spdk.0:pci.spdk.1
+```

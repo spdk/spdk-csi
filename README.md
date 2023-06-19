@@ -220,10 +220,20 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
     $ sudo ./minikube.sh clean
   ```
 
-## Storage Management Agent (SMA)
+## xPU
 
-The SPDK Storage Management Agent (SMA) is an application that provides a gRPC interface for configuring and
-exposing storage volumes within an Infrastructure Processing Unit (IPU), commonly referred to xPU in subsequent terminologies.
+An Infrastructure Processing Unit (IPU), commonly referred to xPU in subsequent terminologies, is an accelerator
+that is attached to the PCIe bus. It communicates with a storage server through its own network interface in reality,
+which will help offload storage-related network traffic from local CPU cores and network interfaces.
+
+Currently, two backends are supported for xPU: Storage Management Agent (SMA) and Open Programmable Infrastructure (OPI).
+
+From the host's point of view, the xPU will look like a hot-pluggable local storage device. For both SMA and OPI, the xPU
+needs to receive remote storage information to enable it to connect to the remote target. This information is shared with
+the CSI node driver via CSI volume parameters that were set at the volume creation time by the CSI controller driver.
+The CSI node driver passes the remote storage information to xPU. For SMA, there will be a SMA gRPC server on the xPU node.
+For OPI, there will be a OPI-SPDK-Bridge gRPC server on the xPU node. They will be able to receive these configurations in
+a standard way (protobufs + gRPC).
 
 The diagram below provides a high-level view of the architecture:
 ```
@@ -233,7 +243,7 @@ The diagram below provides a high-level view of the architecture:
         |--CSI-Node-Pod--|    |    |---Controller---|
         |                |    |    |                |
         | spdk-csi       |    |    |                |
-        | node driver---->--------->--SMA-->-spdk--->---+
+        | node driver---->--------->-SMA/OPI->-spdk->---+
         +----------------+    |    |                |   |
                               |    +----------------+   |
         +---[K8S-Pod]----+    |                         |
@@ -246,9 +256,9 @@ The diagram below provides a high-level view of the architecture:
         +----------------+    |    +----------------+
 ```
 
-## Usage for SMA
+### Usage for xPU
 
-The CSI-Node-Pod's configuration file for SMA is dynamically attached by Kubernetes using a config map as below.
+The CSI-Node-Pod's configuration file for xPU is dynamically attached by Kubernetes using a config map as below.
 
 | File Name                                       | Usage                            |
 | ----------------------------------------------- | -------------------------------  |
@@ -265,7 +275,7 @@ Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
     {
       "xpuList": [
         {
-          "name": "IPU0",
+          "name": "xPU0",
           "targetType": "xpu-sma-nvme",
           "targetAddr":"127.0.0.1:5114"
         }
@@ -273,9 +283,30 @@ Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
     }
 ```
 
-### Prerequisites for SMA
+### Prerequisites for xPU
 
 On a Fedora-based system, you will need grpcio-tools and protobuf installed.
+
+### Workflow for xPU
+
+- The instance of SPDK Json RPC is running on both the xPU node and the storage pool server.
+
+- For SMA, the SMA gRPC server is running on xPU node. For OPI, the OPI-SPDK-Bridge gRPC server is running on xPU node.
+
+- The CSI controller driver is configured with the storage pool details. On the other hand, the CSI node driver is configured
+ with the details of the SMA/OPI gRPC server.
+
+- When the CSI controller driver receives a new volume request from the Kubernetes volume plugin, it initiates a JSON RPC
+ request to the SPDK storage node. This request triggers the creation and export of an NVMe volume on the SPDK storage node.
+ The volume connection details are then stored in the CSI volume parameters for further reference.
+
+- Upon receiving a stage volume request along with the volume parameters, the CSI node driver comes into action. The CSI
+ node plugin initiates the appropriate SMA/OPI gRPC calls to the server running on the xPU node.
+
+- Subsequently, the CSI node driver establishes a connection to the remote NVMe device using the volume parameters obtained
+ earlier. With the connection established, the CSI node driver proceeds to create a local volume with the appropriate volume
+ type. Furthermore, it attaches the volume to the remote NVMe device, effectively exposing it as a local device on the host
+ for further usage.
 
 ### Prepare SPDK xPU node
 
