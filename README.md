@@ -226,6 +226,7 @@ The SPDK Storage Management Agent (SMA) is an application that provides a gRPC i
 exposing storage volumes within an Infrastructure Processing Unit (IPU), commonly referred to xPU in subsequent terminologies.
 
 The diagram below provides a high-level view of the architecture:
+```
         [Kubernetes nodes]    |    [SPDK storage nodes]
                               |
         +---[K8S-Pod]----+    |    +---[xPU-Node]---+
@@ -243,6 +244,7 @@ The diagram below provides a high-level view of the architecture:
         | controller----->--------->---->-spdk-<----<---+
         |                |    |    |                |
         +----------------+    |    +----------------+
+```
 
 ## Usage for SMA
 
