@@ -18,7 +18,11 @@ fi
 
 # Prepare VM for running xPU tests on amd64 hosts.
 # To avoid this invoke the script with -x (no vm)
-PREPARE_VM=$(! [ "${ARCH}" == "amd64" ] ; echo $?)
+if [ "${ARCH}" = amd64 ]; then
+	PREPARE_VM=yes
+else
+	PREPARE_VM=no
+fi
 
 while getopts 'yu:p:x' optchar; do
 	case "$optchar" in
@@ -31,7 +35,8 @@ while getopts 'yu:p:x' optchar; do
 		p)
 			DOCKERHUB_SECRET="$OPTARG"
 			;;
-		x) 	unset PREPARE_VM
+		x)
+			PREPARE_VM=no
 			;;
 		*)
 			echo "$0: invalid argument '$optchar'"
@@ -64,7 +69,7 @@ build_test_binary
 
 vm=
 # build oracle qemu for nvme
-if [ "$PREPARE_VM" ]; then
+if [ "${PREPARE_VM}" = yes ]; then
 	allocate_hugepages 10240
 	vm_build
 	vm_start
@@ -75,11 +80,12 @@ if [ "$PREPARE_VM" ]; then
 	vm_copy_test_binary
 fi
 
-$vm "configure_system_\"${distro}\"; \
-    setup_cri_dockerd; \
-	setup_cni_networking; \
-	stop_host_iscsid; \
-	docker_login"
+$vm "configure_system_${distro}"
+$vm "setup_cri_dockerd"
+$vm "setup_cni_networking"
+$vm "stop_host_iscsid"
+$vm "docker_login"
+
 # workaround minikube permissions issues when running as root in ci(-like) env
 $vm sysctl fs.protected_regular=0
 $vm prepare_k8s_cluster
