@@ -32,7 +32,7 @@ for arg in "$@" ; do
   shift
 done
 
-trap cleanup EXIT ERR
+trap on_exit EXIT ERR
 
 unit_test
 set -x

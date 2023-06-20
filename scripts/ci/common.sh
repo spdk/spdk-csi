@@ -21,7 +21,7 @@ SPDK_SMA_CONTAINER="spdkdev-sma"
 
 vm_qemu_bin=/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64
 vmssh_options="-o StrictHostKeyChecking=accept-new -i $WORKERDIR/id_rsa"
-vmssh="ssh -p 10000 ${vmssh_options}  root@localhost"
+vmssh="ssh -p 10000 ${vmssh_options} root@localhost"
 vmssh_nonblock="ssh -p 10000 ${vmssh_options} -o ConnectTimeout=1 root@localhost"
 
 export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:/usr/local/go/bin:${PATH}"
@@ -375,16 +375,36 @@ function helm_test() {
 	make -C "${ROOTDIR}" helm-test
 }
 
+function dump_logs() {
+	# dump the logs of the containers, in case the containers exit unexpectedly
+	echo "======== logs for spdk storage node - spdk_tgt ========"
+	sudo docker logs "${SPDK_CONTAINER}" || true
+	echo "======== logs for spdk xpu node - spdk_tgt ========"
+	sudo docker logs "${SPDK_SMA_CONTAINER}" || true
+	echo "======== logs for spdk xpu node - sma server ========"
+	sudo docker exec -i "${SPDK_SMA_CONTAINER}" cat /tmp/sma.log || true
+	echo "======== end of dump_logs ========"
+}
+
 function cleanup() {
-	sudo docker stop "${SPDK_CONTAINER}" || :
-	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || :
-	sudo docker stop "${SPDK_SMA_CONTAINER}" || :
-	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
-	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
+	# clean up the spdk storage container and spdk xpu container
+	sudo docker rm -f "${SPDK_CONTAINER}" > /dev/null || true
+	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || true
+	# clean up the vm if it is created for xpu e2e tests, otherwise,
+	# clean the minikube k8s cluster on the host
 	if [ -f "${WORKERDIR}"/qemu.pid ]; then
 		sudo kill "$(< "${WORKERDIR}"/qemu.pid)" 2>/dev/null || true
 		sudo pkill -9 -f -- 'ssh -p 10000 root@localhost' 2>/dev/null || true
+	else
+		sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || true
 	fi
+}
+
+# on_exit will dump the logs of xpu node and storage node
+# if there are test failures, and clean up the vm and containers
+function on_exit() {
+	[[ $? -ne 0 ]] && dump_logs
+	cleanup
 }
 
 function vm_build() {
