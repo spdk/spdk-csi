@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,6 +69,10 @@ type smaCommon struct {
 	timeout       time.Duration
 	volumeID      []byte
 }
+
+// phyIDLock used to synchronize physical function usage
+// between concurrent Connect{Nmve,VirtioBlk}() calls.
+var phyIDLock sync.Mutex
 
 type smainitiatorNvmfTCP struct {
 	sma *smaCommon
@@ -343,6 +348,8 @@ func (i *smainitiatorNvme) Connect() (string, error) {
 	if !os.IsNotExist(err) {
 		klog.Errorf("failed to detect existing nvme device for '%s'", i.sma.volumeContext["model"])
 	}
+	phyIDLock.Lock()
+	defer phyIDLock.Unlock()
 	pf, vf, err := GetNvmeAvailableFunction(i.kvmPciBridges)
 	if err != nil {
 		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
