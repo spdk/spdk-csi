@@ -256,10 +256,11 @@ The CSI-Node-Pod's configuration file for SMA is dynamically attached by Kuberne
 
 You can configure it using the parameters mentioned below.
 Multiple xPU nodes are supported, and each node's configuration includes the name, targetType, and targetAddr fields.
-"targetType": The value can be one of "xpu-sma-nvmftcp", "xpu-sma-virtioblk", or "xpu-sma-nvme".
-"targetAddr": The URL to connect to the SMA server on each cluster node.
+The value of "targetType" can be one of "xpu-sma-nvmftcp", "xpu-sma-virtioblk", or "xpu-sma-nvme",
+and "targetAddr" is the URL used to connect to the SMA server on each cluster node.
 
 Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
+```
   nodeserver-config.json: |-
     {
       "smaList": [
@@ -270,6 +271,7 @@ Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
         }
       ]
     }
+```
 
 ### Prerequisites for SMA
 

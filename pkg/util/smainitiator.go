@@ -380,7 +380,7 @@ func (i *smainitiatorNvme) Connect() (string, error) {
 	// CreateDevice for SMA Nvme
 	devicePath, err := CheckIfNvmeDeviceExists(i.sma.volumeContext["model"], nil)
 	if devicePath != "" {
-		klog.Infof("Found existing device for '%s': %v", i.sma.volumeContext["mode"], devicePath)
+		klog.Infof("Found existing device for '%s': %v", i.sma.volumeContext["model"], devicePath)
 		return devicePath, nil
 	}
 	if !os.IsNotExist(err) {
