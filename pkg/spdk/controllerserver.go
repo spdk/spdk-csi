@@ -37,8 +37,8 @@ var errVolumeInCreation = status.Error(codes.Internal, "volume in creation")
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
-	spdkNodes   map[string]util.SpdkNode // all spdk nodes in cluster
-	volumeLocks *util.VolumeLocks
+	spdkNodeConfigs map[string]*util.SpdkNodeConfig
+	volumeLocks     *util.VolumeLocks
 }
 
 type spdkVolume struct {
@@ -57,10 +57,10 @@ func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolum
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	volumeInfo, err := cs.publishVolume(csiVolume.GetVolumeId())
+	volumeInfo, err := cs.publishVolume(csiVolume.GetVolumeId(), req.Secrets)
 	if err != nil {
 		klog.Errorf("failed to publish volume, volumeID: %s err: %v", volumeID, err)
-		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
+		cs.deleteVolume(csiVolume.GetVolumeId(), req.Secrets) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// copy volume info. node needs these info to contact target(ip, port, nqn, ...)
@@ -80,7 +80,7 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 	unlock := cs.volumeLocks.Lock(volumeID)
 	defer unlock()
 	// no harm if volume already unpublished
-	err := cs.unpublishVolume(volumeID)
+	err := cs.unpublishVolume(volumeID, req.Secrets)
 	switch {
 	case errors.Is(err, util.ErrVolumeUnpublished):
 		// unpublished but not deleted in last request?
@@ -95,7 +95,7 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 	}
 
 	// no harm if volume already deleted
-	err = cs.deleteVolume(volumeID)
+	err = cs.deleteVolume(volumeID, req.Secrets)
 	if errors.Is(err, util.ErrJSONNoSuchDevice) {
 		// deleted in previous request?
 		klog.Warningf("volume not exists: %s", volumeID)
@@ -140,13 +140,17 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		return nil, err
 	}
 
-	snapshotID, err := cs.spdkNodes[spdkVol.nodeName].CreateSnapshot(spdkVol.lvolID, snapshotName)
+	node, err := cs.getSpdkNode(spdkVol.nodeName, req.Secrets)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	snapshotID, err := node.CreateSnapshot(spdkVol.lvolID, snapshotName)
 	if err != nil {
 		klog.Errorf("failed to create snapshot, volumeID: %s snapshotName: %s err: %v", volumeID, snapshotName, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	volInfo, err := cs.spdkNodes[spdkVol.nodeName].VolumeInfo(spdkVol.lvolID)
+	volInfo, err := node.VolumeInfo(spdkVol.lvolID)
 	if err != nil {
 		klog.Errorf("failed to get volume info, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -181,7 +185,11 @@ func (cs *controllerServer) DeleteSnapshot(_ context.Context, req *csi.DeleteSna
 		return nil, err
 	}
 
-	err = cs.spdkNodes[spdkVol.nodeName].DeleteVolume(spdkVol.lvolID)
+	node, err := cs.getSpdkNode(spdkVol.nodeName, req.Secrets)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	err = node.DeleteVolume(spdkVol.lvolID)
 	if err != nil {
 		klog.Errorf("failed to delete snapshot, snapshotID: %s err: %v", snapshotID, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -203,52 +211,74 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		ContentSource: req.GetVolumeContentSource(),
 	}
 
-	// check all SPDK nodes to see if the volume has already been created
-	for nodeName, node := range cs.spdkNodes {
-		lvStores, err := node.LvStores()
-		if err != nil {
-			return nil, fmt.Errorf("get lvstores of node:%s failed: %w", nodeName, err)
-		}
-		for lvsIdx := range lvStores {
-			volumeID, err := node.GetVolume(req.GetName(), lvStores[lvsIdx].Name)
-			if err == nil {
-				vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
-				return &vol, nil
-			}
-		}
+	volumeID, err := cs.getVolume(req)
+	if err == nil {
+		vol.VolumeId = volumeID
+		return &vol, nil
 	}
-	// schedule a SPDK node/lvstore to create the volume.
-	// if volume content source is specified, using the same node/lvstore as the source volume.
-	var err error
-	var volumeID string
-	if req.GetVolumeContentSource() == nil {
-		// schedule suitable node:lvstore
-		nodeName, lvstore, err2 := cs.schedule(sizeMiB)
+	var lvolID string
+
+	if req.GetVolumeContentSource() != nil {
+		// if volume content source is specified, using the same node/lvstore as the source volume.
+		// find the node/lvstore of the specified content source volume
+		nodeName, lvstore, sourceLvolID, err2 := cs.getSnapshotInfo(req.GetVolumeContentSource(), req.Secrets)
 		if err2 != nil {
 			return nil, err2
 		}
-		// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
-		// create a new volume
-		volumeID, err = cs.spdkNodes[nodeName].CreateVolume(req.GetName(), lvstore, sizeMiB)
-		// in the subsequent DeleteVolume() request, a nodeName needs to be specified,
-		// but the current CSI mechanism only passes the VolumeId to DeleteVolume().
-		// therefore, the nodeName is included as part of the VolumeId.
-		vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
-	} else {
-		// find the node/lvstore of the specified content source volume
-		nodeName, lvstore, sourceLvolID, err2 := cs.getSnapshotInfo(req.GetVolumeContentSource())
+		node, err2 := cs.getSpdkNode(nodeName, req.Secrets)
 		if err2 != nil {
-			return nil, err2
+			return nil, status.Error(codes.Internal, err2.Error())
 		}
 		// create a volume cloned from the source volume
-		volumeID, err = cs.spdkNodes[nodeName].CloneVolume(req.GetName(), lvstore, sourceLvolID)
-		vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
+		lvolID, err = node.CloneVolume(req.GetName(), lvstore, sourceLvolID)
+		vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, lvolID)
+		if err != nil {
+			return nil, err
+		}
+		return &vol, nil
 	}
-
+	// schedule a SPDK node/lvstore to create the volume.
+	// schedule suitable node:lvstore
+	nodeName, lvstore, err2 := cs.schedule(sizeMiB, req.Secrets)
+	if err2 != nil {
+		return nil, err2
+	}
+	node, err2 := cs.getSpdkNode(nodeName, req.Secrets)
+	if err2 != nil {
+		return nil, status.Error(codes.Internal, err2.Error())
+	}
+	// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
+	// create a new volume
+	lvolID, err = node.CreateVolume(req.GetName(), lvstore, sizeMiB)
+	// in the subsequent DeleteVolume() request, a nodeName needs to be specified,
+	// but the current CSI mechanism only passes the VolumeId to DeleteVolume().
+	// therefore, the nodeName is included as part of the VolumeId.
+	vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, lvolID)
 	if err != nil {
 		return nil, err
 	}
 	return &vol, nil
+}
+
+func (cs *controllerServer) getVolume(req *csi.CreateVolumeRequest) (string, error) {
+	// check all SPDK nodes to see if the volume has already been created
+	for _, cfg := range cs.spdkNodeConfigs {
+		node, err := cs.getSpdkNode(cfg.Name, req.Secrets)
+		if err != nil {
+			return "nil", fmt.Errorf("failed to get spdkNode %s: %s", cfg.Name, err.Error())
+		}
+		lvStores, err := node.LvStores()
+		if err != nil {
+			return "", fmt.Errorf("get lvstores of node:%s failed: %w", cfg.Name, err)
+		}
+		for lvsIdx := range lvStores {
+			volumeID, err := node.GetVolume(req.GetName(), lvStores[lvsIdx].Name)
+			if err == nil {
+				return fmt.Sprintf("%s:%s", cfg.Name, volumeID), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("volume not found")
 }
 
 func getSPDKVol(csiVolumeID string) (*spdkVolume, error) {
@@ -267,41 +297,53 @@ func getSPDKVol(csiVolumeID string) (*spdkVolume, error) {
 	return nil, fmt.Errorf("missing nodeName in volume: %s", csiVolumeID)
 }
 
-func (cs *controllerServer) publishVolume(volumeID string) (map[string]string, error) {
+func (cs *controllerServer) publishVolume(volumeID string, secrets map[string]string) (map[string]string, error) {
 	spdkVol, err := getSPDKVol(volumeID)
 	if err != nil {
 		return nil, err
 	}
-	err = cs.spdkNodes[spdkVol.nodeName].PublishVolume(spdkVol.lvolID)
+	node, err := cs.getSpdkNode(spdkVol.nodeName, secrets)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	err = node.PublishVolume(spdkVol.lvolID)
 	if err != nil {
 		return nil, err
 	}
 
-	volumeInfo, err := cs.spdkNodes[spdkVol.nodeName].VolumeInfo(spdkVol.lvolID)
+	volumeInfo, err := node.VolumeInfo(spdkVol.lvolID)
 	if err != nil {
-		cs.unpublishVolume(volumeID) //nolint:errcheck // we can do little
+		cs.unpublishVolume(volumeID, secrets) //nolint:errcheck // we can do little
 		return nil, err
 	}
 	return volumeInfo, nil
 }
 
-func (cs *controllerServer) deleteVolume(volumeID string) error {
+func (cs *controllerServer) deleteVolume(volumeID string, secrets map[string]string) error {
 	spdkVol, err := getSPDKVol(volumeID)
 	if err != nil {
 		return err
 	}
-	return cs.spdkNodes[spdkVol.nodeName].DeleteVolume(spdkVol.lvolID)
+	node, err := cs.getSpdkNode(spdkVol.nodeName, secrets)
+	if err != nil {
+		return err
+	}
+	return node.DeleteVolume(spdkVol.lvolID)
 }
 
-func (cs *controllerServer) unpublishVolume(volumeID string) error {
+func (cs *controllerServer) unpublishVolume(volumeID string, secrets map[string]string) error {
 	spdkVol, err := getSPDKVol(volumeID)
 	if err != nil {
 		return err
 	}
-	return cs.spdkNodes[spdkVol.nodeName].UnpublishVolume(spdkVol.lvolID)
+	node, err := cs.getSpdkNode(spdkVol.nodeName, secrets)
+	if err != nil {
+		return err
+	}
+	return node.UnpublishVolume(spdkVol.lvolID)
 }
 
-func (cs *controllerServer) getSnapshotInfo(vcs *csi.VolumeContentSource) (
+func (cs *controllerServer) getSnapshotInfo(vcs *csi.VolumeContentSource, secrets map[string]string) (
 	nodeName, lvstore, sourceLvolID string, err error,
 ) {
 	snapshotSource := vcs.GetSnapshot()
@@ -317,7 +359,12 @@ func (cs *controllerServer) getSnapshotInfo(vcs *csi.VolumeContentSource) (
 	nodeName = snapSpdkVol.nodeName
 	sourceLvolID = snapSpdkVol.lvolID
 
-	sourceLvolInfo, err := cs.spdkNodes[nodeName].VolumeInfo(sourceLvolID)
+	node, err := cs.getSpdkNode(nodeName, secrets)
+	if err != nil {
+		return
+	}
+
+	sourceLvolInfo, err := node.VolumeInfo(sourceLvolID)
 	if err != nil {
 		return
 	}
@@ -326,9 +373,13 @@ func (cs *controllerServer) getSnapshotInfo(vcs *csi.VolumeContentSource) (
 }
 
 // simplest volume scheduler: find first node:lvstore with enough free space
-func (cs *controllerServer) schedule(sizeMiB int64) (nodeName, lvstore string, err error) {
-	for name, spdkNode := range cs.spdkNodes {
-		// retrieve latest lvstore info from spdk node
+func (cs *controllerServer) schedule(sizeMiB int64, secrets map[string]string) (nodeName, lvstore string, err error) {
+	for _, cfg := range cs.spdkNodeConfigs {
+		spdkNode, err := cs.getSpdkNode(cfg.Name, secrets)
+		if err != nil {
+			klog.Errorf("failed to get spdkNode %s: %s", nodeName, err.Error())
+			continue
+		}
 		lvstores, err := spdkNode.LvStores()
 		if err != nil {
 			klog.Errorf("failed to get lvstores from node %s: %s", spdkNode.Info(), err.Error())
@@ -338,7 +389,7 @@ func (cs *controllerServer) schedule(sizeMiB int64) (nodeName, lvstore string, e
 		for i := range lvstores {
 			lvstore := &lvstores[i]
 			if lvstore.FreeSizeMiB > sizeMiB {
-				return name, lvstore.Name, nil
+				return cfg.Name, lvstore.Name, nil
 			}
 		}
 		klog.Infof("not enough free space from node %s", spdkNode.Info())
@@ -347,68 +398,44 @@ func (cs *controllerServer) schedule(sizeMiB int64) (nodeName, lvstore string, e
 	return "", "", fmt.Errorf("failed to find node with enough free space")
 }
 
+func (cs *controllerServer) getSpdkNode(nodeName string, secrets map[string]string) (util.SpdkNode, error) {
+	spdkSecrets, err := util.NewSpdkSecrets(secrets["secret.json"])
+	if err != nil {
+		return nil, err
+	}
+	node, ok := cs.spdkNodeConfigs[nodeName]
+	if !ok {
+		return nil, fmt.Errorf("%s spdknode not exists", node.Name)
+	}
+	for i := range spdkSecrets.Tokens {
+		token := spdkSecrets.Tokens[i]
+		if token.Name == nodeName {
+			spdkNode, err := util.NewSpdkNode(node.URL, token.UserName, token.Password, node.TargetType, node.TargetAddr)
+			if err != nil {
+				klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
+			}
+			return spdkNode, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find secret for spdk node %s", node.Name)
+}
+
 func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	server := controllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
-		spdkNodes:               map[string]util.SpdkNode{},
+		spdkNodeConfigs:         map[string]*util.SpdkNodeConfig{},
 		volumeLocks:             util.NewVolumeLocks(),
 	}
 
-	// get spdk node configs, see deploy/kubernetes/config-map.yaml
-	//nolint:tagliatelle // not using json:snake case
-	var config struct {
-		Nodes []struct {
-			Name       string `json:"name"`
-			URL        string `json:"rpcURL"`
-			TargetType string `json:"targetType"`
-			TargetAddr string `json:"targetAddr"`
-		} `json:"Nodes"`
-	}
-	configFile := util.FromEnv("SPDKCSI_CONFIG", "/etc/spdkcsi-config/config.json")
-	err := util.ParseJSONFile(configFile, &config)
+	config, err := util.NewCSIControllerConfig("SPDKCSI_CONFIG", "/etc/spdkcsi-config/config.json")
 	if err != nil {
 		return nil, err
 	}
-
-	// get spdk node secrets, see deploy/kubernetes/secret.yaml
-	//nolint:tagliatelle // not using json:snake case
-	var secret struct {
-		Tokens []struct {
-			Name     string `json:"name"`
-			UserName string `json:"username"`
-			Password string `json:"password"`
-		} `json:"rpcTokens"`
-	}
-	secretFile := util.FromEnv("SPDKCSI_SECRET", "/etc/spdkcsi-secret/secret.json")
-	err = util.ParseJSONFile(secretFile, &secret)
-	if err != nil {
-		return nil, err
-	}
-
-	// create spdk nodes
 	for i := range config.Nodes {
-		node := &config.Nodes[i]
-		tokenFound := false
-		// find secret per node
-		for j := range secret.Tokens {
-			token := &secret.Tokens[j]
-			if token.Name == node.Name {
-				tokenFound = true
-				spdkNode, err := util.NewSpdkNode(node.URL, token.UserName, token.Password, node.TargetType, node.TargetAddr)
-				if err != nil {
-					klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
-				} else {
-					klog.Infof("spdk node created: name=%s, url=%s", node.Name, node.URL)
-					server.spdkNodes[node.Name] = spdkNode
-				}
-				break
-			}
-		}
-		if !tokenFound {
-			klog.Errorf("failed to find secret for spdk node %s", node.Name)
-		}
+		server.spdkNodeConfigs[config.Nodes[i].Name] = &config.Nodes[i]
 	}
-	if len(server.spdkNodes) == 0 {
+
+	if len(server.spdkNodeConfigs) == 0 {
 		return nil, fmt.Errorf("no valid spdk node found")
 	}
 

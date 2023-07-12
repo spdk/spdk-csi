@@ -155,7 +155,6 @@ func createTestController(targetType string) (cs *controllerServer, lvss [][]uti
 	}
 	defer func() {
 		os.Remove(os.Getenv("SPDKCSI_CONFIG"))
-		os.Remove(os.Getenv("SPDKCSI_SECRET"))
 	}()
 
 	cd := csicommon.NewCSIDriver("test-driver", "test-version", "test-node")
@@ -211,13 +210,10 @@ func createConfigFiles(targetType string) error {
 		return err
 	}
 	os.Setenv("SPDKCSI_CONFIG", configFile.Name())
+	return nil
+}
 
-	secretFile, err := os.CreateTemp("", "spdkcsi-secret*.json")
-	if err != nil {
-		os.Remove(configFile.Name())
-		return err
-	}
-	defer secretFile.Close()
+func getSpdkSecrets() map[string]string {
 	//nolint:gosec // only for test
 	secret := `
     {
@@ -229,21 +225,16 @@ func createConfigFiles(targetType string) error {
         }
       ]
 	}`
-	_, err = secretFile.WriteString(secret)
-	if err != nil {
-		os.Remove(configFile.Name())
-		os.Remove(secretFile.Name())
-		return err
+	return map[string]string{
+		"secret.json": secret,
 	}
-	os.Setenv("SPDKCSI_SECRET", secretFile.Name())
-
-	return nil
 }
 
 func createTestVolume(cs *controllerServer, name string, size int64) (string, error) {
 	reqCreate := csi.CreateVolumeRequest{
 		Name:          name,
 		CapacityRange: &csi.CapacityRange{RequiredBytes: size},
+		Secrets:       getSpdkSecrets(),
 	}
 
 	resp, err := cs.CreateVolume(context.TODO(), &reqCreate)
@@ -260,7 +251,10 @@ func createTestVolume(cs *controllerServer, name string, size int64) (string, er
 }
 
 func deleteTestVolume(cs *controllerServer, volumeID string) error {
-	reqDelete := csi.DeleteVolumeRequest{VolumeId: volumeID}
+	reqDelete := csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+		Secrets:  getSpdkSecrets(),
+	}
 	_, err := cs.DeleteVolume(context.TODO(), &reqDelete)
 	return err
 }
@@ -274,6 +268,7 @@ func createSameVolumeInParallel(cs *controllerServer, name string, count int, si
 	reqCreate := csi.CreateVolumeRequest{
 		Name:          name,
 		CapacityRange: &csi.CapacityRange{RequiredBytes: size},
+		Secrets:       getSpdkSecrets(),
 	}
 	for i := 0; i < count; i++ {
 		wg.Add(1)
@@ -316,7 +311,10 @@ func deleteSameVolumeInParallel(cs *controllerServer, volumeID string, count int
 	var errCount int32
 
 	// issue delete requests to *same* volume in parallel
-	reqDelete := csi.DeleteVolumeRequest{VolumeId: volumeID}
+	reqDelete := csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+		Secrets:  getSpdkSecrets(),
+	}
 	for i := 0; i < count; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
@@ -337,7 +335,11 @@ func deleteSameVolumeInParallel(cs *controllerServer, volumeID string, count int
 
 func getLVSS(cs *controllerServer) ([][]util.LvStore, error) {
 	var lvss [][]util.LvStore
-	for _, spdkNode := range cs.spdkNodes {
+	for _, cfg := range cs.spdkNodeConfigs {
+		spdkNode, err := cs.getSpdkNode(cfg.Name, getSpdkSecrets())
+		if err != nil {
+			return nil, err
+		}
 		lvs, err := spdkNode.LvStores()
 		if err != nil {
 			return nil, err

@@ -11,6 +11,8 @@ metadata:
 provisioner: csi.spdk.io
 parameters:
   fsType: ext4
+  csi.storage.k8s.io/provisioner-secret-name: spdkcsi-secret
+  csi.storage.k8s.io/provisioner-secret-namespace: default
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 {{- end -}}

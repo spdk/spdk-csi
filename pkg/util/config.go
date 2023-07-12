@@ -16,6 +16,8 @@ limitations under the License.
 
 package util
 
+import "encoding/json"
+
 const (
 	// TODO: move hardcoded settings to config map
 	cfgRPCTimeoutSeconds = 20
@@ -36,4 +38,51 @@ type Config struct {
 
 	IsControllerServer bool
 	IsNodeServer       bool
+}
+
+// CSIControllerConfig config for csi driver controller server, see deploy/kubernetes/config-map.yaml
+//
+//nolint:tagliatelle // not using json:snake case
+type CSIControllerConfig struct {
+	Nodes []SpdkNodeConfig `json:"Nodes"`
+}
+
+// SpdkNodeConfig config for spdk storage cluster
+//
+//nolint:tagliatelle // not using json:snake case
+type SpdkNodeConfig struct {
+	Name       string `json:"name"`
+	URL        string `json:"rpcURL"`
+	TargetType string `json:"targetType"`
+	TargetAddr string `json:"targetAddr"`
+}
+
+func NewCSIControllerConfig(env, def string) (*CSIControllerConfig, error) {
+	var config CSIControllerConfig
+	configFile := FromEnv(env, def)
+	err := ParseJSONFile(configFile, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// SpdkSecrets spdk storage cluster connection secrets, see deploy/kubernetes/secrets.yaml
+//
+//nolint:tagliatelle // not using json:snake case
+type SpdkSecrets struct {
+	Tokens []struct {
+		Name     string `json:"name"`
+		UserName string `json:"username"`
+		Password string `json:"password"`
+	} `json:"rpcTokens"`
+}
+
+func NewSpdkSecrets(jsonSecrets string) (*SpdkSecrets, error) {
+	var secs SpdkSecrets
+	err := json.Unmarshal([]byte(jsonSecrets), &secs)
+	if err != nil {
+		return nil, err
+	}
+	return &secs, nil
 }

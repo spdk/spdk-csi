@@ -62,9 +62,6 @@ spec:
         - name: spdkcsi-config
           mountPath: /etc/spdkcsi-config/
           readOnly: true
-        - name: spdkcsi-secret
-          mountPath: /etc/spdkcsi-secret/
-          readOnly: true
       volumes:
       - name: socket-dir
         emptyDir:
@@ -72,6 +69,3 @@ spec:
       - name: spdkcsi-config
         configMap:
           name: spdkcsi-cm
-      - name: spdkcsi-secret
-        secret:
-          secretName: spdkcsi-secret

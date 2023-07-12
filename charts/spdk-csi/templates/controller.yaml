@@ -54,9 +54,6 @@ spec:
         - name: spdkcsi-config
           mountPath: /etc/spdkcsi-config/
           readOnly: true
-        - name: spdkcsi-secret
-          mountPath: /etc/spdkcsi-secret/
-          readOnly: true
       - name: spdkcsi-snapshotter
         image: "{{ .Values.image.csiSnapshotter.repository }}:{{ .Values.image.csiSnapshotter.tag }}"
         args:
@@ -78,6 +75,3 @@ spec:
       - name: spdkcsi-config
         configMap:
           name: spdkcsi-cm
-      - name: spdkcsi-secret
-        secret:
-          secretName: spdkcsi-secret

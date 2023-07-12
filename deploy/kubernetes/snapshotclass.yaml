@@ -10,4 +10,6 @@ metadata:
 driver: csi.spdk.io
 parameters:
   fsType: ext4
+  csi.storage.k8s.io/snapshotter-secret-name: spdkcsi-secret
+  csi.storage.k8s.io/snapshotter-secret-namespace: default
 deletionPolicy: Delete
