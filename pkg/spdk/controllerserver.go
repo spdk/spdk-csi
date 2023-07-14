@@ -53,11 +53,13 @@ func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolum
 
 	csiVolume, err := cs.createVolume(req)
 	if err != nil {
+		klog.Errorf("failed to create volume, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	volumeInfo, err := cs.publishVolume(csiVolume.GetVolumeId())
 	if err != nil {
+		klog.Errorf("failed to publish volume, volumeID: %s err: %v", volumeID, err)
 		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -87,6 +89,7 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 		// deleted in previous request?
 		klog.Warningf("volume already deleted: %s", volumeID)
 	case err != nil:
+		klog.Errorf("failed to unpublish volume, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -96,6 +99,7 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 		// deleted in previous request?
 		klog.Warningf("volume not exists: %s", volumeID)
 	} else if err != nil {
+		klog.Errorf("failed to delete volume, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -131,20 +135,24 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 	snapshotName := req.GetName()
 	spdkVol, err := getSPDKVol(volumeID)
 	if err != nil {
+		klog.Errorf("failed to get spdk volume, volumeID: %s err: %v", volumeID, err)
 		return nil, err
 	}
 
 	snapshotID, err := cs.spdkNodes[spdkVol.nodeName].CreateSnapshot(spdkVol.lvolID, snapshotName)
 	if err != nil {
+		klog.Errorf("failed to create snapshot, volumeID: %s snapshotName: %s err: %v", volumeID, snapshotName, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	volInfo, err := cs.spdkNodes[spdkVol.nodeName].VolumeInfo(spdkVol.lvolID)
 	if err != nil {
+		klog.Errorf("failed to get volume info, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	size, err := strconv.ParseInt(volInfo["lvolSize"], 10, 64)
 	if err != nil {
+		klog.Errorf("failed to parse volume size, lvolSize: %s err: %v", volInfo["lvolSize"], err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	creationTime := timestamppb.Now()
@@ -168,11 +176,13 @@ func (cs *controllerServer) DeleteSnapshot(_ context.Context, req *csi.DeleteSna
 
 	spdkVol, err := getSPDKVol(snapshotID)
 	if err != nil {
+		klog.Errorf("failed to get spdk volume, snapshotID: %s err: %v", snapshotID, err)
 		return nil, err
 	}
 
 	err = cs.spdkNodes[spdkVol.nodeName].DeleteVolume(spdkVol.lvolID)
 	if err != nil {
+		klog.Errorf("failed to delete snapshot, snapshotID: %s err: %v", snapshotID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 

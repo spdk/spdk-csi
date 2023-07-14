@@ -137,7 +137,7 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 
 	isStaged, err := ns.isStaged(stagingTargetPath)
 	if err != nil {
-		klog.Errorf("check isStaged error: %v", err)
+		klog.Errorf("failed to check isStaged, targetPath: %s err: %v", stagingTargetPath, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if isStaged {
@@ -154,13 +154,13 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 		initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
 	}
 	if err != nil {
-		klog.Errorf("create spdk initiator error: %v", err)
+		klog.Errorf("failed to create spdk initiator, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	devicePath, err := initiator.Connect() // idempotent
 	if err != nil {
-		klog.Errorf("connect initiator error: %v", err)
+		klog.Errorf("failed to connect initiator, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	defer func() {
@@ -169,14 +169,14 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 		}
 	}()
 	if err = ns.stageVolume(devicePath, stagingTargetPath, req); err != nil { // idempotent
-		klog.Errorf("stage volume error: %v", err)
+		klog.Errorf("failed to stage volume, volumeID: %s devicePath:%s err: %v", volumeID, devicePath, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// stash VolumeContext to stagingParentPath (useful during Unstage as it has no
 	// VolumeContext passed to the RPC as per the CSI spec)
 	err = util.StashVolumeContext(req.GetVolumeContext(), stagingParentPath)
 	if err != nil {
-		klog.Errorf("stash volume context error: %v", err)
+		klog.Errorf("failed to stash volume context, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &csi.NodeStageVolumeResponse{}, nil
@@ -192,7 +192,7 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 
 	isStaged, err := ns.isStaged(stagingTargetPath)
 	if err != nil {
-		klog.Errorf("check isStaged error: %v", err)
+		klog.Errorf("failed to check isStaged, targetPath: %s err: %v", stagingTargetPath, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !isStaged {
@@ -202,13 +202,13 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 
 	err = ns.deleteMountPoint(stagingTargetPath) // idempotent
 	if err != nil {
-		klog.Errorf("delete mount point error: %v", err)
+		klog.Errorf("failed to delete mount point, targetPath: %s err: %v", stagingTargetPath, err)
 		return nil, status.Errorf(codes.Internal, "unstage volume %s failed: %s", volumeID, err)
 	}
 
 	volumeContext, err := util.LookupVolumeContext(stagingParentPath)
 	if err != nil {
-		klog.Errorf("lookup volume context error: %v", err)
+		klog.Errorf("failed to lookup volume context, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	var initiator util.SpdkCsiInitiator
@@ -220,16 +220,16 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 		initiator, err = util.NewSpdkCsiInitiator(volumeContext)
 	}
 	if err != nil {
-		klog.Errorf("create spdk initiator error: %v", err)
+		klog.Errorf("failed to create spdk initiator, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	err = initiator.Disconnect() // idempotent
 	if err != nil {
-		klog.Errorf("disconnect initiator error: %v", err)
+		klog.Errorf("failed to disconnect initiator, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if err := util.CleanUpVolumeContext(stagingParentPath); err != nil {
-		klog.Warningf("clean up volume context error: %v", err)
+		klog.Errorf("failed to clean up volume context, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &csi.NodeUnstageVolumeResponse{}, nil
@@ -242,6 +242,7 @@ func (ns *nodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishV
 
 	err := ns.publishVolume(getStagingTargetPath(req), req) // idempotent
 	if err != nil {
+		klog.Errorf("failed to publish volume, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -254,6 +255,7 @@ func (ns *nodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpubl
 
 	err := ns.deleteMountPoint(req.GetTargetPath()) // idempotent
 	if err != nil {
+		klog.Errorf("failed to delete mount point, targetPath: %s err: %v", req.GetTargetPath(), err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &csi.NodeUnpublishVolumeResponse{}, nil

@@ -97,7 +97,7 @@ mod-check:
 .PHONY: unit-test
 unit-test:
 	@echo === running unit test
-	@go test -cover $(foreach d,$(SOURCE_DIRS),./$(d)/...)
+	@go test -v -cover $(foreach d,$(SOURCE_DIRS),./$(d)/...)
 
 # e2e test
 .PHONY: e2e-test
@@ -109,7 +109,7 @@ unit-test:
 E2E_TEST_ARGS=
 e2e-test:
 	@echo === running e2e test
-	go test -timeout 30m ./e2e $(E2E_TEST_ARGS)
+	go test -v -timeout 30m ./e2e $(E2E_TEST_ARGS)
 
 # helm test
 .PHONY: helm-test
