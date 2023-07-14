@@ -21,7 +21,7 @@ Options:
 echo "Running script as user: $(whoami)"
 
 # Default run all xPU tests on amd64 hosts.
-# Invoke this scirpt with -x if to exclude xPU tets
+# Invoke this script with -x if to exclude xPU tets
 if [ "${ARCH}" = amd64 ]; then
 	RUN_XPU_TESTS=yes
 else
@@ -46,7 +46,7 @@ if [ "${RUN_XPU_TESTS}" = yes ]; then
     echo "Running E2E tests in VM"
     # ./scripts/ci/prepare.sh is run with sudo user. Where
     # the ssh key generated is owned by root, hence make it
-    # accessbile by the current user
+    # accessible by the current user
     sudo chown "$perm" "${WORKERDIR}"/id_rsa
 
     vm e2e_test "-xpu=true"

@@ -295,7 +295,7 @@ func (ns *nodeServer) stageVolume(devicePath, stagingPath string, req *csi.NodeS
 		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 		mntFlags = append(mntFlags, "ro")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
-		return errors.New("unsupport MULTI_NODE_MULTI_WRITER AccessMode")
+		return errors.New("unsupported MULTI_NODE_MULTI_WRITER AccessMode")
 	case csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER:
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:

@@ -289,7 +289,7 @@ func (cs *controllerServer) unpublishVolume(volumeID string) error {
 // simplest volume scheduler: find first node:lvstore with enough free space
 func (cs *controllerServer) schedule(sizeMiB int64) (nodeName, lvstore string, err error) {
 	for name, spdkNode := range cs.spdkNodes {
-		// retrieve lastest lvstore info from spdk node
+		// retrieve latest lvstore info from spdk node
 		lvstores, err := spdkNode.LvStores()
 		if err != nil {
 			klog.Errorf("failed to get lvstores from node %s: %s", spdkNode.Info(), err.Error())

@@ -121,7 +121,7 @@ function install_packages_ubuntu() {
 	configure_docker_proxy
 	systemctl start docker
 
-	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
+	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
 	gem install mdl -v 0.12.0
 }
 
@@ -145,7 +145,7 @@ function install_packages_fedora() {
 					qemu-img \
 					genisoimage
 	install_docker
-	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
+	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
 	gem install mdl -v 0.12.0
 }
 

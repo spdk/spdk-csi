@@ -45,7 +45,7 @@ spdkcsi:
 	@CGO_ENABLED=0 GOARCH=$(GOARCH) GOOS=linux go build -buildvcs=false -o $(OUT_DIR)/spdkcsi ./cmd/
 
 # static code check, text lint
-lint: golangci yamllint shellcheck mdl
+lint: golangci yamllint shellcheck mdl codespell
 
 .PHONY: golangci
 golangci: $(GOLANGCI_BIN)
@@ -83,6 +83,16 @@ mdl:
 		mdl --git-recurse --style scripts/ci/mdl_rules.rb .;             \
 	else                                                                 \
 	    echo Markdown linter not found, please install;                  \
+	    false                                          ;                 \
+	fi
+
+.PHONY: codespell
+codespell:
+	@echo === running codespell
+	@if hash codespell 2> /dev/null; then                                \
+		git ls-files -z | xargs -0 codespell;                            \
+	else                                                                 \
+	    echo codespell linter not found, please install;                 \
 	    false                                          ;                 \
 	fi
 
