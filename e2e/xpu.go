@@ -110,7 +110,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 	})
 
-	ginkgo.Describe("Test SPDK CSI SMA NVME", func() {
+	ginkgo.Describe("Test SPDK CSI SMA NVME", ginkgo.Label("xpu-vm-tests"), func() {
 		ginkgo.BeforeEach(func() {
 			deployConfigs(xpuControllerConfigMapData)
 			deploySmaNvmeConfig()
@@ -124,10 +124,6 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 
 		ginkgo.It("SPDKCSI-SMA-NVME", func() {
-			if !runXPU {
-				ginkgo.Skip("skip SPDKCSI-SMA-NVME test as runXPU is false")
-			}
-
 			commonTests()
 
 			ginkgo.By("log verification for SMA-NVME workflow", func() {
@@ -146,7 +142,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 	})
 
-	ginkgo.Describe("Test SPDK CSI SMA VirtioBlk", func() {
+	ginkgo.Describe("Test SPDK CSI SMA VirtioBlk", ginkgo.Label("xpu-vm-tests"), func() {
 		ginkgo.BeforeEach(func() {
 			deployConfigs(xpuControllerConfigMapData)
 			deploySmaVirtioBlkConfig()
@@ -160,10 +156,6 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 
 		ginkgo.It("SPDKCSI-SMA-VirtioBlk", func() {
-			if !runXPU {
-				ginkgo.Skip("skip SPDKCSI-SMA-VirtioBlk test as runXPU is false")
-			}
-
 			commonTests()
 
 			ginkgo.By("log verification for SMA-VirtioBlk workflow", func() {
@@ -180,7 +172,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 	})
 
-	ginkgo.Describe("Test SPDK CSI OPI NVME", func() {
+	ginkgo.Describe("Test SPDK CSI OPI NVME", ginkgo.Label("xpu-vm-tests"), func() {
 		ginkgo.BeforeEach(func() {
 			deployConfigs(xpuControllerConfigMapData)
 			deployOpiNvmeConfig()
@@ -194,10 +186,6 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 
 		ginkgo.It("SPDKCSI-OPI-NVME", func() {
-			if !runXPU {
-				ginkgo.Skip("skip SPDKCSI-OPI-NVME test as runXPU is false")
-			}
-
 			commonTests()
 
 			ginkgo.By("log verification for OPI-NVME workflow", func() {
@@ -222,7 +210,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 	})
 
-	ginkgo.Describe("Test SPDK CSI OPI VirtioBlk", func() {
+	ginkgo.Describe("Test SPDK CSI OPI VirtioBlk", ginkgo.Label("xpu-vm-tests"), func() {
 		ginkgo.BeforeEach(func() {
 			deployConfigs(xpuControllerConfigMapData)
 			deployOpiVirtioBlkConfig()
@@ -236,10 +224,6 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 		})
 
 		ginkgo.It("SPDKCSI-OPI-VirtioBlk", func() {
-			if !runXPU {
-				ginkgo.Skip("skip SPDKCSI-OPI-VirtioBlk test as runXPU is false")
-			}
-
 			commonTests()
 
 			ginkgo.By("log verification for OPI-VirtioBlk workflow", func() {

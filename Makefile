@@ -112,10 +112,11 @@ unit-test:
 # e2e test
 .PHONY: e2e-test
 # Pass extra arguments to e2e tests. Could be used
-# to pass -xpu argument and running only fouced tests
+# to pass --ginkgo.label-filter or --ginkgo.focus
 # for quick testing.
 # The below example tests:
-#   make e2e-test E2E_TEST_ARGS='-xpu=true --ginkgo.focus=\"TEST SPDK CSI SMA NVME\"'
+# make e2e-test E2E_TEST_ARGS='--ginkgo.label-filter=\"!xpu-vm-tests\" --ginkgo.focus=\"TEST SPDK CSI SMA NVME\"'
+# ginkgo documents can be found here: https://onsi.github.io/ginkgo/
 E2E_TEST_ARGS=
 e2e-test:
 	@echo === running e2e test
