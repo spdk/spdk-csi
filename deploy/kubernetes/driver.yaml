@@ -7,6 +7,6 @@ kind: CSIDriver
 metadata:
   name: csi.spdk.io
 spec:
-  attachRequired: true
+  attachRequired: false
   volumeLifecycleModes:
   - Persistent

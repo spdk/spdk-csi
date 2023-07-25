@@ -35,17 +35,6 @@ spec:
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
-      - name: spdkcsi-attacher
-        image: "{{ .Values.image.csiAttacher.repository }}:{{ .Values.image.csiAttacher.tag }}"
-        imagePullPolicy: {{ .Values.image.csiAttacher.pullPolicy }}
-        args:
-        - "--v=5"
-        - "--csi-address=unix:///csi/csi-provisioner.sock"
-        - "--leader-election=true"
-        - "--leader-election-namespace={{ .Release.Namespace }}"
-        volumeMounts:
-        - name: socket-dir
-          mountPath: /csi
       - name: spdkcsi-controller
         image: "{{ .Values.image.spdkcsi.repository }}:{{ .Values.image.spdkcsi.tag }}"
         imagePullPolicy: {{ .Values.image.spdkcsi.pullPolicy }}

@@ -24,10 +24,10 @@ rules:
   verbs: ["get", "list"]
 - apiGroups: [""]
   resources: ["persistentvolumes"]
-  verbs: ["get", "list", "watch", "create", "delete"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
-  verbs: ["get", "list", "watch", "update"]
+  verbs: ["get", "list", "watch", "update", "patch"]
 - apiGroups: ["storage.k8s.io"]
   resources: ["storageclasses"]
   verbs: ["get", "list", "watch"]
@@ -46,9 +46,6 @@ rules:
 - apiGroups: [""]
   resources: ["nodes"]
   verbs: ["get", "list", "watch"]
-- apiGroups: ["storage.k8s.io"]
-  resources: ["volumeattachments"]
-  verbs: ["get", "list", "watch"]
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "watch", "list", "delete", "update", "create"]
@@ -65,42 +62,5 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: spdkcsi-provisioner-role
-  apiGroup: rbac.authorization.k8s.io
-
-# external-attacher sidecar required roles
----
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: spdkcsi-attacher-role
-rules:
-- apiGroups: [""]
-  resources: ["persistentvolumes"]
-  verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["storage.k8s.io"]
-  resources: ["csinodes"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["storage.k8s.io"]
-  resources: ["volumeattachments"]
-  verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["storage.k8s.io"]
-  resources: ["volumeattachments/status"]
-  verbs: ["patch"]
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list"]
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: spdkcsi-attacher-binding
-subjects:
-- kind: ServiceAccount
-  name: spdkcsi-controller-sa
-  namespace: {{ .Release.Namespace }}
-roleRef:
-  kind: ClusterRole
-  name: spdkcsi-attacher-role
   apiGroup: rbac.authorization.k8s.io
 {{- end -}}
