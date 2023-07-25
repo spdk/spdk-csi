@@ -88,6 +88,7 @@ func (cs *controllerServer) DeleteVolume(_ context.Context, req *csi.DeleteVolum
 	case errors.Is(err, util.ErrVolumeDeleted):
 		// deleted in previous request?
 		klog.Warningf("volume already deleted: %s", volumeID)
+		return &csi.DeleteVolumeResponse{}, nil
 	case err != nil:
 		klog.Errorf("failed to unpublish volume, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
