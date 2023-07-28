@@ -30,7 +30,7 @@ detectArch() {
 install() {
 	if [ "$hasHelm" = false ]; then
 		mkdir -p ${TEMP}
-		wget "https://get.helm.sh/helm-${HELM_VERSION}-${dist}-${arch}.tar.gz" -O "${TEMP}/helm.tar.gz"
+		wget -q "https://get.helm.sh/helm-${HELM_VERSION}-${dist}-${arch}.tar.gz" -O "${TEMP}/helm.tar.gz"
 		tar -C "${TEMP}" -zxvf "${TEMP}/helm.tar.gz"
 	fi
 	echo "Helm install successful"

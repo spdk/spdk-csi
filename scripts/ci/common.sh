@@ -103,8 +103,8 @@ function allocate_hugepages() {
 }
 
 function install_packages_ubuntu() {
-	apt-get update -y
-	apt-get install -y make \
+	apt-get -yqq update
+	apt-get -yqq install make \
 					gcc \
 					curl \
 					docker.io \
@@ -122,8 +122,8 @@ function install_packages_ubuntu() {
 	configure_docker_proxy
 	systemctl start docker
 
-	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
-	gem install mdl -v 0.12.0
+	pip3 install -q yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
+	gem install -q mdl -v 0.12.0
 }
 
 function install_packages_fedora() {
@@ -146,8 +146,8 @@ function install_packages_fedora() {
 					qemu-img \
 					genisoimage
 	install_docker
-	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
-	gem install mdl -v 0.12.0
+	pip3 install -q yamllint==1.23.0 shellcheck-py==0.8.0.4 codespell==2.2.5
+	gem install -q mdl -v 0.12.0
 }
 
 function install_docker() {
@@ -238,9 +238,9 @@ function setup_cri_dockerd() {
 
 	echo "=============== setting up cri-dockerd ==============="
 	echo "=== downloading cri-dockerd-${CRIDOCKERD_VERSION}"
-	wget -c https://github.com/Mirantis/cri-dockerd/releases/download/v"${CRIDOCKERD_VERSION}"/cri-dockerd-"${CRIDOCKERD_VERSION}"."${ARCH}".tgz -O - | tar -xz -C /usr/local/bin/ --strip-components 1
-	wget https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service -P /etc/systemd/system/
-	wget https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket -P /etc/systemd/system/
+	wget -q -c https://github.com/Mirantis/cri-dockerd/releases/download/v"${CRIDOCKERD_VERSION}"/cri-dockerd-"${CRIDOCKERD_VERSION}"."${ARCH}".tgz -O - | tar -xz -C /usr/local/bin/ --strip-components 1
+	wget -q https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service -P /etc/systemd/system/
+	wget -q https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket -P /etc/systemd/system/
 
 	# start cri-docker service
 	sed -i -e 's,/usr/bin/cri-dockerd,/usr/local/bin/cri-dockerd,' /etc/systemd/system/cri-docker.service
@@ -249,16 +249,16 @@ function setup_cri_dockerd() {
 	systemctl enable --now cri-docker.socket
 
 	echo "=== downloading crictl-${CRITOOLS_VERSION}"
-	wget -c https://github.com/kubernetes-sigs/cri-tools/releases/download/"${CRITOOLS_VERSION}"/crictl-"${CRITOOLS_VERSION}"-linux-"${ARCH}".tar.gz -O - | tar -xz -C /usr/local/bin/
+	wget -q -c https://github.com/kubernetes-sigs/cri-tools/releases/download/"${CRITOOLS_VERSION}"/crictl-"${CRITOOLS_VERSION}"-linux-"${ARCH}".tar.gz -O - | tar -xz -C /usr/local/bin/
 }
 
 function setup_cni_networking() {
 	echo "=============== setting up CNI networking ==============="
 	echo "=== downloading 10-crio-bridge.conf and CNI plugins"
 	mkdir -p /etc/cni/net.d
-	wget https://raw.githubusercontent.com/cri-o/cri-o/v1.23.4/contrib/cni/10-crio-bridge.conf -P /etc/cni/net.d/
+	wget -q https://raw.githubusercontent.com/cri-o/cri-o/v1.23.4/contrib/cni/10-crio-bridge.conf -P /etc/cni/net.d/
 	mkdir -p /opt/cni/bin
-	wget -c https://github.com/containernetworking/plugins/releases/download/"${CNIPLUGIN_VERSION}"/cni-plugins-linux-"${ARCH}"-"${CNIPLUGIN_VERSION}".tgz -O - | tar -xz -C /opt/cni/bin
+	wget -q -c https://github.com/containernetworking/plugins/releases/download/"${CNIPLUGIN_VERSION}"/cni-plugins-linux-"${ARCH}"-"${CNIPLUGIN_VERSION}".tgz -O - | tar -xz -C /opt/cni/bin
 }
 
 function stop_host_iscsid() {
@@ -298,7 +298,7 @@ function build_spdkimage() {
 
 	echo "============= building spdk container =============="
 	spdkdir="${ROOTDIR}/deploy/spdk"
-	docker build -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" \
+	docker build -q -t "${SPDKIMAGE}" -f "${spdkdir}/Dockerfile" \
 	"${docker_proxy_opt[@]}" "${spdkdir}" &&  echo "${SPDKIMAGE} image build successfully."
 }
 
@@ -370,7 +370,7 @@ function unit_test() {
 
 function e2e_test() {
 	echo "======== run E2E test (with args $*)========"
-	( cd "${ROOTDIR}"/e2e && ./e2e-test "$*" )
+	( cd "${ROOTDIR}"/e2e && ./e2e-test "$@" )
 }
 
 function helm_test() {
@@ -531,7 +531,7 @@ function __vm_qemu_launch() {
 	done
 
 	if [ ! -f "${fedora_qcow2}" ]; then
-		curl -Lk https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/x86_64/images/Fedora-Cloud-Base-37-1.7.x86_64.qcow2 > "${fedora_qcow2}"
+		curl -sLk https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/x86_64/images/Fedora-Cloud-Base-37-1.7.x86_64.qcow2 > "${fedora_qcow2}"
 		echo "Check disk info and resize the qemu VM img"
 		df -h
 		qemu-img resize "${fedora_qcow2}" +20G

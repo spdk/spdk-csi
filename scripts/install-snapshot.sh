@@ -57,8 +57,8 @@ function create_or_delete_resource() {
 	temp_rbac=${TEMP_DIR}/snapshot-rbac.yaml
 	temp_snap_controller=${TEMP_DIR}/snapshot-controller.yaml
 	mkdir -p "${TEMP_DIR}"
-	curl -o "${temp_rbac}" "${SNAPSHOT_RBAC}"
-	curl -o "${temp_snap_controller}" "${SNAPSHOT_CONTROLLER}"
+	curl -s -o "${temp_rbac}" "${SNAPSHOT_RBAC}"
+	curl -s -o "${temp_snap_controller}" "${SNAPSHOT_CONTROLLER}"
 	sed -i "s/namespace: default/namespace: ${namespace}/g" "${temp_rbac}"
 	sed -i "s/canary/${SNAPSHOT_VERSION}/g" "${temp_snap_controller}"
 

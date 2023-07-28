@@ -2,7 +2,7 @@
 
 # build and test spdkcsi, can be invoked manually or by jenkins
 
-DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 # shellcheck source=scripts/ci/env
 source "${DIR}/env"
@@ -23,18 +23,21 @@ echo "Running script as user: $(whoami)"
 # Default run all xPU tests on amd64 hosts.
 # Invoke this script with -x if to exclude xPU tets
 if [ "${ARCH}" = amd64 ]; then
-	RUN_XPU_VM_TESTS=yes
+    RUN_XPU_VM_TESTS=yes
 else
-	RUN_XPU_VM_TESTS=no
+    RUN_XPU_VM_TESTS=no
 fi
 
-for arg in "$@" ; do
-  case "$arg" in
-  -h|--help) Usage ; exit ;;
-  -x) RUN_XPU_VM_TESTS=no ;;
-  *) echo "Ignoring unknown argument: $arg" >&2 ;;
-  esac
-  shift
+for arg in "$@"; do
+    case "$arg" in
+    -h | --help)
+        Usage
+        exit
+        ;;
+    -x) RUN_XPU_VM_TESTS=no ;;
+    *) echo "Ignoring unknown argument: $arg" >&2 ;;
+    esac
+    shift
 done
 
 trap on_exit EXIT ERR
@@ -49,7 +52,7 @@ if [ "${RUN_XPU_VM_TESTS}" = yes ]; then
     # accessible by the current user
     sudo chown "$perm" "${WORKERDIR}"/id_rsa
 
-    vm e2e_test
+    vm e2e_test --ginkgo.no-color --ginkgo.trace
     vm "make -C \${ROOTDIR} helm-test HELM_SKIP_SPDKDEV_CHECK=1"
     vm_stop
 else
@@ -58,7 +61,7 @@ else
     sudo cp -r /root/.kube /root/.minikube "${HOME}"
     sudo chown -R "$perm" "${HOME}"/.kube "${HOME}"/.minikube
     sed -i "s#/root/#$HOME/#g" "${HOME}"/.kube/config
-    e2e_test --ginkgo.label-filter="!xpu-vm-tests" # exclude tests labeled with xpu-vm-tests
+    e2e_test --ginkgo.no-color --ginkgo.trace --ginkgo.label-filter="!xpu-vm-tests" # exclude tests labeled with xpu-vm-tests
     helm_test
 fi
 set +x

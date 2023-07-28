@@ -21,14 +21,14 @@ function install_minikube() {
 	fi
 
 	echo "=== downloading minikube-${MINIKUBE_VERSION}"
-	curl -Lo /usr/local/bin/minikube https://storage.googleapis.com/minikube/releases/"${MINIKUBE_VERSION}"/minikube-linux-"${MINIKUBE_ARCH}" && chmod +x /usr/local/bin/minikube
+	curl -sLo /usr/local/bin/minikube https://storage.googleapis.com/minikube/releases/"${MINIKUBE_VERSION}"/minikube-linux-"${MINIKUBE_ARCH}" && chmod +x /usr/local/bin/minikube
 }
 
 case "$1" in
 	up)
 		install_minikube
 		echo "=== starting minikube with kubeadm bootstrapper"
-		CHANGE_MINIKUBE_NONE_USER=true minikube start -b kubeadm --kubernetes-version="${KUBE_VERSION}" --vm-driver="${MINIKUBE_DRIVER}" --alsologtostderr -v=5
+		CHANGE_MINIKUBE_NONE_USER=true minikube start -b kubeadm --kubernetes-version="${KUBE_VERSION}" --vm-driver="${MINIKUBE_DRIVER}"
 		;;
 	down)
 		minikube stop
