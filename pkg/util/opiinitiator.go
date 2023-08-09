@@ -260,14 +260,16 @@ func (i *opiInitiatorNvme) deleteNvmeSubsystem(ctx context.Context) error {
 }
 
 // Create a controller with vfiouser transport information for Nvme
-func (i *opiInitiatorNvme) createNvmeController(ctx context.Context, physID uint32) error {
+func (i *opiInitiatorNvme) createNvmeController(ctx context.Context, physID, virtID uint32) error {
 	nvmeControllerID := opiObjectPrefix + i.volumeContext["model"]
 	createReq := &opiapiStorage.CreateNvmeControllerRequest{
 		NvmeController: &opiapiStorage.NvmeController{
 			Spec: &opiapiStorage.NvmeControllerSpec{
 				SubsystemNameRef: i.subsystemName,
 				PcieId: &opiapiStorage.PciEndpoint{
+					PortId:           0,
 					PhysicalFunction: int32(physID),
+					VirtualFunction:  int32(virtID),
 				},
 			},
 		},
@@ -276,10 +278,9 @@ func (i *opiInitiatorNvme) createNvmeController(ctx context.Context, physID uint
 	klog.Info("OPI.CreateNvmeController() => ", createReq)
 	createResp, err := i.frontendNvmeClient.CreateNvmeController(ctx, createReq)
 	if err != nil {
-		klog.Errorf("OPI.CreateNvmeController with pfId (%d) error: %s", physID, err)
-		return fmt.Errorf("failed to create NVMe controller: %w", err)
+		return fmt.Errorf("failed to create NVMe controller with physID (%d) and virtID (%d) error: %w", physID, virtID, err)
 	}
-	klog.Infof("OPI.CreateNvmeController() with pfId '%d' <= %+v", physID, createResp)
+	klog.Infof("OPI.CreateNvmeController() with physID (%d) and virtID (%d) <= %+v", physID, virtID, createResp)
 	i.nvmeControllerName = createResp.Name
 
 	return nil
@@ -363,9 +364,9 @@ func (i *opiInitiatorNvme) deleteNvmeNamespace(ctx context.Context) error {
 // First, to create a new subsystem, the nqn (nqn.2016-06.io.spdk.csi:subsystem:uuid:VolumeId) will be set in the CreateNvmeSubsystemRequest.
 // After a successful CreateNvmeSubsystemRequest, a nvmf subsystem with the nqn will be created on the xPU node.
 // Second, create a controller with vfiouser transport information, we are using the KVM case now,
-// and the only information needed in the CreateNvmeControllerRequest is pfId, which should be from 0 to the sum of buses-counts (namely 64 in our case).
+// and the only information needed in the CreateNvmeControllerRequest is pfID, which should be from 0 to the sum of buses-counts (namely 64 in our case).
 // After a successful CreateNvmeControllerRequest, the "listen_addresses" field in the nvmf subsystem created in the first step
-// will be filled in with VFIOUSER related information, including transport (VFIOUSER), trtype (VFIOUSER), adrfam (IPv4) and traddr (/var/tmp/controller$pfId).
+// will be filled in with VFIOUSER related information, including transport (VFIOUSER), trtype (VFIOUSER), adrfam (IPv4) and traddr (/var/tmp/controller$pfID).
 // Third, to connect to the remote controller, this step is used to connect to the storage node.
 // Fourth, to create multipath for connection, in this step, paths are then created within a controller.
 // Finally, to get Bdev for the volume and add a new namespace to the subsystem with that bdev. After this step, the Nvme block device will appear.
@@ -385,7 +386,7 @@ func (i *opiInitiatorNvme) Connect(ctx context.Context, params *ConnectParams) e
 		}
 	}()
 	// step 2: create a controller with vfiouser transport information
-	if err := i.createNvmeController(ctx, params.vPf); err != nil {
+	if err := i.createNvmeController(ctx, params.PciEndpoint.pfID, params.PciEndpoint.vfID); err != nil {
 		return err
 	}
 	// step 3: connect to remote controller
@@ -400,6 +401,7 @@ func (i *opiInitiatorNvme) Connect(ctx context.Context, params *ConnectParams) e
 	if err := i.createNvmeNamespace(ctx); err != nil {
 		return err
 	}
+
 	failed = false
 
 	return nil
@@ -407,7 +409,7 @@ func (i *opiInitiatorNvme) Connect(ctx context.Context, params *ConnectParams) e
 
 // For OPI Nvme Disconnect(), all the resources created in the Connect() function will be deleted reversely,
 // namely, deleteNvmeNamespace, deleteNvmfPath, deleteNvmeController, deleteNvmeRemoteController, and deleteNvmeSubsystem.
-// All these five functions are encrypted in a new cleanup() function, as all the deleting operations have "AllowMissing: true" in the request,
+// All these five functions are encapsulated in a new cleanup() function, as all the deleting operations have "AllowMissing: true" in the request,
 // they will always succeed even if the resources are not found.
 func (i *opiInitiatorNvme) Disconnect(ctx context.Context) error {
 	return i.cleanup(ctx)
@@ -431,24 +433,26 @@ func (i *opiInitiatorNvme) cleanup(ctx context.Context) error {
 }
 
 // Create a controller with VirtioBlk transport information Bdev
-func (i *opiInitiatorVirtioBlk) createVirtioBlk(ctx context.Context, physID uint32) error {
+func (i *opiInitiatorVirtioBlk) createVirtioBlk(ctx context.Context, physID, virtID uint32) error {
 	virtioBlkID := opiObjectPrefix + i.volumeContext["model"]
 	createReq := &opiapiStorage.CreateVirtioBlkRequest{
 		VirtioBlk: &opiapiStorage.VirtioBlk{
 			PcieId: &opiapiStorage.PciEndpoint{
+				PortId:           0,
 				PhysicalFunction: int32(physID),
+				VirtualFunction:  int32(virtID),
 			},
 			VolumeNameRef: i.volumeContext["model"],
 		},
 		VirtioBlkId: virtioBlkID,
 	}
 	klog.Info("OPI.CreateVirtioBlk() => ", createReq)
-	blkDevice, err := i.frontendVirtioBlkClient.CreateVirtioBlk(ctx, createReq)
+	createResp, err := i.frontendVirtioBlkClient.CreateVirtioBlk(ctx, createReq)
 	if err != nil {
-		return fmt.Errorf("failed to create virtio-blk device with pfId (%d) error: %w", physID, err)
+		return fmt.Errorf("failed to create virtio-blk device with physID (%d) and virtID (%d) error: %w", physID, virtID, err)
 	}
-	klog.Info("OPI.CreateVirtioBlk() <= ", blkDevice)
-	i.virtioBlkName = blkDevice.Name
+	klog.Infof("OPI.CreateVirtioBlk() with physID (%d) and virtID (%d) <= %+v", physID, virtID, createResp)
+	i.virtioBlkName = createResp.Name
 
 	return nil
 }
@@ -504,7 +508,7 @@ func (i *opiInitiatorVirtioBlk) Connect(ctx context.Context, params *ConnectPara
 	}
 
 	// step 3: Create a controller with virtio_blk transport information bdev
-	if err := i.createVirtioBlk(ctx, params.vPf); err != nil {
+	if err := i.createVirtioBlk(ctx, params.PciEndpoint.pfID, params.PciEndpoint.vfID); err != nil {
 		return err
 	}
 	failed = false

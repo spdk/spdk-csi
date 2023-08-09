@@ -42,8 +42,40 @@ type nodeServer struct {
 	mounter       mount.Interface
 	volumeLocks   *util.VolumeLocks
 	xpuConnClient *grpc.ClientConn
-	xpuTargetType string
-	kvmPciBridges int
+	xpuConfigInfo *util.XpuConfig
+}
+
+// try to set up a connection to the first available xPU node in the list via grpc
+// once the connection is built, send pings every 10 seconds if there is no activity
+// FIXME (JingYan): when there are multiple xPU nodes, find a better way to choose one to connect with
+func connectXpuNode(xpuList []*util.XpuConfig) (*grpc.ClientConn, *util.XpuConfig) {
+	var xpuConnClient *grpc.ClientConn
+	var xpuConfigInfo *util.XpuConfig
+
+	for i := range xpuList {
+		conn, err := grpc.Dial(
+			xpuList[i].TargetAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+			grpc.WithKeepaliveParams(keepalive.ClientParameters{
+				Time:                10 * time.Second,
+				Timeout:             1 * time.Second,
+				PermitWithoutStream: true,
+			}),
+			grpc.FailOnNonTempDialError(true),
+		)
+		if err != nil {
+			klog.Errorf("connect to xPU node: TargetType (%v), TargetAddr (%v) with err (%v)", xpuList[i].TargetType, xpuList[i].TargetAddr, err)
+		} else {
+			klog.Infof("successfully connected to xPU node: TargetType (%v), TargetAddr (%v)", xpuList[i].TargetType, xpuList[i].TargetAddr)
+			klog.Infof("ClassID (%v), VendorID (%v), DeviceID (%v)", xpuList[i].PciIDs.ClassID, xpuList[i].PciIDs.VendorID, xpuList[i].PciIDs.DeviceID)
+			xpuConnClient = conn
+			xpuConfigInfo = xpuList[i]
+			break
+		}
+	}
+
+	return xpuConnClient, xpuConfigInfo
 }
 
 func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
@@ -64,63 +96,31 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 		klog.Infof("configuration file specified in %s (%s by default) is missing or empty", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile)
 		return ns, nil
 	}
+
 	//nolint:tagliatelle // not using json:snake case
 	var config struct {
-		XPUList []struct {
-			Name       string `json:"name"`
-			TargetType string `json:"targetType"`
-			TargetAddr string `json:"targetAddr"`
-		} `json:"xpuList"`
-		KvmPciBridges int `json:"kvmPciBridges,omitempty"`
+		XpuList []*util.XpuConfig `json:"xpuList"`
 	}
 
 	err = util.ParseJSONFile(configFile, &config)
 	if err != nil {
 		return nil, fmt.Errorf("error in the configuration file specified in %s (%s by default): %w", spdkcsiNodeServerConfigFileEnv, spdkcsiNodeServerConfigFile, err)
 	}
-	klog.Infof("obtained xPU info (%v) from configuration file (%s)", config.XPUList, spdkcsiNodeServerConfigFile)
+	klog.Infof("obtained xPU info (%v) from configuration file (%s)", config.XpuList, spdkcsiNodeServerConfigFile)
 
-	ns.kvmPciBridges = config.KvmPciBridges
-	klog.Infof("obtained KvmPciBridges num (%v) from configuration file (%s)", config.KvmPciBridges, spdkcsiNodeServerConfigFile)
+	// try to connect a valid xPU node
+	ns.xpuConnClient, ns.xpuConfigInfo = connectXpuNode(config.XpuList)
 
-	// try to set up a connection to the first available xPU node in the list via grpc
-	// once the connection is built, send pings every 10 seconds if there is no activity
-	// FIXME (JingYan): when there are multiple xPU nodes, find a better way to choose one to connect with
-
-	var xpuConnClient *grpc.ClientConn
-	var xpuTargetType string
-
-	for i := range config.XPUList {
-		if config.XPUList[i].TargetType != "" && config.XPUList[i].TargetAddr != "" {
-			klog.Infof("TargetType: %v, TargetAddr: %v.", config.XPUList[i].TargetType, config.XPUList[i].TargetAddr)
-			conn, err := grpc.Dial(
-				config.XPUList[i].TargetAddr,
-				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
-				grpc.WithKeepaliveParams(keepalive.ClientParameters{
-					Time:                10 * time.Second,
-					Timeout:             1 * time.Second,
-					PermitWithoutStream: true,
-				}),
-				grpc.FailOnNonTempDialError(true),
-			)
-			if err != nil {
-				klog.Errorf("failed to connect to xPU node in: %s, %s", config.XPUList[i].TargetAddr, err)
-			} else {
-				klog.Infof("connected to xPU node %v with TargetType as %v", config.XPUList[i].TargetAddr, config.XPUList[i].TargetType)
-				xpuConnClient = conn
-				xpuTargetType = config.XPUList[i].TargetType
-				break
-			}
-		} else {
-			klog.Errorf("missing xPU TargetType or TargetAddr in xPUList index %d, skipping this xPU node", i)
+	if ns.xpuConfigInfo != nil {
+		if ns.xpuConfigInfo.TargetType == "xpu-opi-virtioblk" && !util.IsKvm(&ns.xpuConfigInfo.PciIDs) {
+			klog.Errorf("Creating OPI VirtioBlk device on xPU hardware is not supported yet")
+			ns.xpuConnClient = nil
 		}
 	}
-	if xpuConnClient == nil && xpuTargetType == "" {
-		klog.Infof("failed to connect to any xPU node in the xpuList or xpuList is empty, will continue without xPU node")
+
+	if ns.xpuConnClient == nil {
+		klog.Infof("failed to connect to any xPU node in the xpuList or xpuList is empty or wrong configuration, will continue without xPU node")
 	}
-	ns.xpuConnClient = xpuConnClient
-	ns.xpuTargetType = xpuTargetType
 
 	return ns, nil
 }
@@ -144,10 +144,10 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 	}
 
 	var initiator util.SpdkCsiInitiator
-	if ns.xpuConnClient != nil && ns.xpuTargetType != "" {
+	if ns.xpuConnClient != nil {
 		vc := req.GetVolumeContext()
 		vc["stagingParentPath"] = stagingParentPath
-		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
+		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuConfigInfo)
 	} else {
 		initiator, err = util.NewSpdkCsiInitiator(req.GetVolumeContext())
 	}
@@ -210,10 +210,10 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	var initiator util.SpdkCsiInitiator
-	if ns.xpuConnClient != nil && ns.xpuTargetType != "" {
+	if ns.xpuConnClient != nil {
 		vc := volumeContext
 		vc["stagingParentPath"] = stagingParentPath
-		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
+		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuConfigInfo)
 	} else {
 		initiator, err = util.NewSpdkCsiInitiator(volumeContext)
 	}

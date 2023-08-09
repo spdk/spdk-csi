@@ -265,13 +265,13 @@ func (i *smaInitiatorNvme) Connect(ctx context.Context, params *ConnectParams) e
 	createReq := &smarpc.CreateDeviceRequest{
 		Params: &smarpc.CreateDeviceRequest_Nvme{
 			Nvme: &nvme.DeviceParameters{
-				PhysicalId: params.vPf,
-				VirtualId:  0,
+				PhysicalId: params.PciEndpoint.pfID,
+				VirtualId:  params.PciEndpoint.vfID,
 			},
 		},
 	}
 	if err := i.CreateDevice(ctx, createReq); err != nil {
-		klog.Errorf("SMA.Nvme CreateDevice error: %s", err)
+		klog.Errorf("CreateDevice for SMA NVME with PhysicalId (%d) and VirtualID (%d) error: %s", params.PciEndpoint.pfID, params.PciEndpoint.vfID, err)
 		return err
 	}
 
@@ -339,14 +339,14 @@ func (i *smaInitiatorVirtioBlk) Connect(ctx context.Context, params *ConnectPara
 		},
 		Params: &smarpc.CreateDeviceRequest_VirtioBlk{
 			VirtioBlk: &virtio_blk.DeviceParameters{
-				PhysicalId: params.vPf,
-				VirtualId:  0,
+				PhysicalId: params.PciEndpoint.pfID,
+				VirtualId:  params.PciEndpoint.vfID,
 			},
 		},
 	}
 
 	if err := i.CreateDevice(ctx, createReq); err != nil {
-		klog.Errorf("CreateDevice for SMA VirtioBlk with PhysicalId (%d) error: %s", params.vPf, err)
+		klog.Errorf("CreateDevice for SMA VirtioBlk with PhysicalId (%d) and VirtualID (%d) error: %s", params.PciEndpoint.pfID, params.PciEndpoint.vfID, err)
 		return err
 	}
 

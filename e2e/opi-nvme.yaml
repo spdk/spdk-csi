@@ -13,8 +13,12 @@ data:
         {
           "name": "xPU0",
           "targetType": "xpu-opi-nvme",
-          "targetAddr": "127.0.0.1:50051"
+          "targetAddr": "127.0.0.1:50051",
+          "pciIDs": {
+            "classID": "0x060400",
+            "vendorID": "0x1b36",
+            "deviceID": "0x0001"
+          }
         }
-      ],
-      "kvmPciBridges": 2
+      ]
     }

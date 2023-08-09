@@ -96,7 +96,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-NVMF-TCP workflow", func() {
 				expLogList := []string{
-					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-nvmftcp",
+					"successfully connected to xPU node",
 					"SMA.CreateDevice",
 					"SMA.AttachVolume",
 					"SMA.DetachVolume",
@@ -128,7 +128,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-NVME workflow", func() {
 				expLogList := []string{
-					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-nvme",
+					"successfully connected to xPU node",
 					"SMA.CreateDevice",
 					"SMA.AttachVolume",
 					"SMA.DetachVolume",
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-VirtioBlk workflow", func() {
 				expLogList := []string{
-					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-virtioblk",
+					"successfully connected to xPU node",
 					"SMA.CreateDevice",
 					"SMA.DeleteDevice",
 				}
@@ -190,7 +190,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for OPI-NVME workflow", func() {
 				expLogList := []string{
-					"connected to xPU node 127.0.0.1:50051 with TargetType as xpu-opi-nvme",
+					"successfully connected to xPU node",
 					"OPI.CreateNvmeSubsystem",
 					"OPI.CreateNvmeController",
 					"OPI.CreateNvmeRemoteController",
@@ -228,7 +228,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for OPI-VirtioBlk workflow", func() {
 				expLogList := []string{
-					"connected to xPU node 127.0.0.1:50051 with TargetType as xpu-opi-virtioblk",
+					"successfully connected to xPU node",
 					"OPI.CreateNvmeRemoteController",
 					"OPI.CreateVirtioBlk",
 					"OPI.CreateNVMfPath",

@@ -9,12 +9,16 @@ metadata:
 data:
   # xpu.targetType:
   #   - SMA: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
+  #   - OPI: xpu-opi-virtioblk, xpu-opi-nvme
   # xpu.targetAddr:
   #   - URL to connect the xPU node through GRPC, IPADDR:PORT
-  #   - 127.0.0.1:5114 for SMA server by default
-  # kvmPciBridges:
-  #   - used by sma-virtioblk, sma-nvme
-  #   - based on the configuration in "deploy/spdk/sma.yaml" and qemu VM
+  #   - 127.0.0.1:5114 is xPU node - sma server by default
+  #   - 127.0.0.1:50051 is xPU node - opi-spdk-bridge by default
+  # classID, vendorID, deviceID:
+  #   - used to detect kvm pci bridges or xpu hardware
+  #   - for kvm, set classID, vendorID and deviceID as
+  #     0x060400, 0x1b36 and 0x1b36 by default
+  #   - for xpu hardware, fill the fields according to the hardware
   #
   # example:
   #  nodeserver-config.json: |-
@@ -22,14 +26,18 @@ data:
   #    "xpuList": [
   #      {
   #        "name": "xPU0",
-  #        "targetType": "xpu-sma-nvmftcp",
-  #        "targetAddr": "127.0.0.1:5114"
+  #        "targetType": "xpu-opi-nvme",
+  #        "targetAddr": "127.0.0.1:50051",
+  #        "pciIDs": {
+  #          "classID": "0x060400",
+  #          "vendorID": "0x1b36",
+  #          "deviceID": "0x0001"
+  #        }
   #      }
-  #    ],
-  #    "kvmPciBridges": 2
+  #    ]
   #  }
+  #
   nodeserver-config.json: |-
     {
-      "xpuList": [],
-      "kvmPciBridges": null
+      "xpuList": []
     }

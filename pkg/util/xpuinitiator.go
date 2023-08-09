@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +27,11 @@ import (
 )
 
 const (
-	xpuTargetBackendSma  = "sma"
-	xpuTargetBackendOpi  = "opi"
+	xpuTargetBackendSma = "sma"
+	xpuTargetBackendOpi = "opi"
+)
+
+const (
 	xpuNvmfTCPTargetType = "tcp"
 	xpuNvmfTCPAdrFam     = "ipv4"
 	xpuNvmfTCPTargetAddr = "127.0.0.1"
@@ -35,13 +39,13 @@ const (
 	xpuNvmfTCPSubNqnPref = "nqn.2022-04.io.spdk.csi:cnode0:uuid:"
 )
 
-type TransportType string
-
 const (
 	TransportTypeNvmfTCP   = "nvmftcp"
 	TransportTypeNvme      = "nvme"
 	TransportTypeVirtioBlk = "virtioblk"
 )
+
+type TransportType string
 
 type XpuInitiator interface {
 	Connect(context.Context, *ConnectParams) error
@@ -51,7 +55,7 @@ type XpuInitiator interface {
 
 type ConnectParams struct {
 	tcpTargetPort string // NvmfTCP
-	vPf           uint32 // VirtiioBlk, and Vfiouser
+	PciEndpoint   PciEndpoint
 }
 
 type XpuTargetType struct {
@@ -63,37 +67,64 @@ type xpuInitiator struct {
 	backend       XpuInitiator
 	targetInfo    *XpuTargetType
 	volumeContext map[string]string
-	kvmPciBridges int
+	xpuConfig     XpuConfig
 	timeout       time.Duration
 	devicePath    string
+	PciEndpoint   PciEndpoint
+	PciBdfs       PciBdfs
+}
+
+type PciEndpoint struct {
+	pfID uint32 // VirtioBlk, and Vfiouser
+	vfID uint32 // VirtioBlk, and Vfiouser
+}
+
+type PciBdfs struct {
+	pfBdf string // xPU hardware
+	vfBdf string // xPU hardware and kvm
+}
+
+//nolint:tagliatelle // not using json:snake case
+type PciIDs struct {
+	VendorID string `json:"vendorID"`
+	DeviceID string `json:"deviceID"`
+	ClassID  string `json:"classID"`
 }
 
 var _ SpdkCsiInitiator = &xpuInitiator{}
 
 // phyIDLock used to synchronize physical function usage
-// between concurrent Connect{Nmve,VirtioBlk}() calls.
+// between concurrent Connect{Nvme,VirtioBlk}() calls.
 var phyIDLock sync.Mutex
 
-func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc.ClientConn, xpuTargetType string, kvmPciBridges int) (SpdkCsiInitiator, error) {
-	targetInfo, err := parseSpdkXpuTargetType(xpuTargetType)
+//nolint:tagliatelle // not using json:snake case
+type XpuConfig struct {
+	Name       string `json:"name"`
+	TargetType string `json:"targetType"`
+	TargetAddr string `json:"targetAddr"`
+	PciIDs     PciIDs `json:"pciIDs,omitempty"` // set omitempty in case of sma nvmf-tcp
+}
+
+func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc.ClientConn, xpuConfig *XpuConfig) (SpdkCsiInitiator, error) {
+	targetInfo, err := parseSpdkXpuTargetType(xpuConfig.TargetType)
 	if err != nil {
 		return nil, err
 	}
 	xpu := &xpuInitiator{
 		targetInfo:    targetInfo,
 		volumeContext: volumeContext,
-		kvmPciBridges: kvmPciBridges,
+		xpuConfig:     *xpuConfig,
 		timeout:       60 * time.Second,
 	}
 
-	storedXPUContext, _ := xpu.tryGetXPUContext() //nolint:errcheck // no need to check
+	storedXpuContext, _ := xpu.tryGetXpuContext() //nolint:errcheck // no need to check
 
 	var backend XpuInitiator
 	switch targetInfo.Backend {
 	case xpuTargetBackendSma:
-		backend, err = NewSpdkCsiSmaInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXPUContext)
+		backend, err = NewSpdkCsiSmaInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXpuContext)
 	case xpuTargetBackendOpi:
-		backend, err = NewSpdkCsiOpiInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXPUContext)
+		backend, err = NewSpdkCsiOpiInitiator(volumeContext, xpuConnClient, targetInfo.TrType, storedXpuContext)
 	default:
 		return nil, fmt.Errorf("unknown target type: %q", targetInfo.Backend)
 	}
@@ -104,9 +135,13 @@ func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc
 	return xpu, nil
 }
 
-func (xpu *xpuInitiator) saveXPUContext() error {
+func (xpu *xpuInitiator) saveXpuContext() error {
 	xPUContext := xpu.backend.GetParam()
 	xPUContext["devicePath"] = xpu.devicePath
+	xPUContext["pfID"] = fmt.Sprintf("%d", xpu.PciEndpoint.pfID)
+	xPUContext["vfID"] = fmt.Sprintf("%d", xpu.PciEndpoint.vfID)
+	xPUContext["pfBdf"] = xpu.PciBdfs.pfBdf
+	xPUContext["vfBdf"] = xpu.PciBdfs.vfBdf
 
 	klog.Infof("saveXPUContext '%s' to the local file", xPUContext)
 	err := StashXPUContext(
@@ -119,12 +154,19 @@ func (xpu *xpuInitiator) saveXPUContext() error {
 	return nil
 }
 
-func (xpu *xpuInitiator) tryGetXPUContext() (map[string]string, error) {
+func (xpu *xpuInitiator) tryGetXpuContext() (map[string]string, error) {
 	xPUContext, err := LookupXPUContext(xpu.volumeContext["stagingParentPath"])
 	if err != nil {
 		return nil, fmt.Errorf("loadXPUContext() error: %w", err)
 	}
 	xpu.devicePath = xPUContext["devicePath"]
+	xpu.PciBdfs.pfBdf = xPUContext["pfBdf"]
+	xpu.PciBdfs.vfBdf = xPUContext["vfBdf"]
+	pfID64, _ := strconv.ParseUint(xPUContext["pfID"], 10, 64) //nolint:errcheck // no need to check
+	xpu.PciEndpoint.pfID = uint32(pfID64)
+	vfID64, _ := strconv.ParseUint(xPUContext["vfID"], 10, 64) //nolint:errcheck // no need to check
+	xpu.PciEndpoint.vfID = uint32(vfID64)
+
 	return xPUContext, nil
 }
 
@@ -149,7 +191,7 @@ func (xpu *xpuInitiator) Connect( /*ctx *context.Context*/ ) (string, error) {
 		return "", fmt.Errorf("XPU.Connect with transport type %s err %w", xpu.targetInfo.TrType, err)
 	}
 
-	err = xpu.saveXPUContext()
+	err = xpu.saveXpuContext()
 	if err != nil {
 		return "", fmt.Errorf("XPU.Connect saveXPUContext err %w", err)
 	}
@@ -158,7 +200,9 @@ func (xpu *xpuInitiator) Connect( /*ctx *context.Context*/ ) (string, error) {
 }
 
 func (xpu *xpuInitiator) ConnectNvmfTCP(ctx context.Context) (string, error) {
-	if err := xpu.backend.Connect(ctx, &ConnectParams{tcpTargetPort: smaNvmfTCPTargetPort}); err != nil {
+	if err := xpu.backend.Connect(ctx, &ConnectParams{
+		tcpTargetPort: smaNvmfTCPTargetPort,
+	}); err != nil {
 		return "", err
 	}
 
@@ -178,6 +222,48 @@ func (xpu *xpuInitiator) ConnectNvmfTCP(ctx context.Context) (string, error) {
 	return devicePath, nil
 }
 
+// In xpu hardware case with OPI, once Connect() succeeds, which means the VF is created successfully,
+// the "nvme" will be required to be written to the file (/sys/bus/pci/devices/"$pfBdf"/virtfn"$vfID-1"/driver_override),
+// and $vfBdf will be required to be written to the file (/sys/bus/pci/drivers/nvme/bind).
+// More information could be seen: https://github.com/opiproject/opi-intel-bridge/blob/0f2c034da270367a6b3078d170afe21a56b86b04/README.md?plain=1#L166
+func (xpu *xpuInitiator) updateNvmeFilesForConnect(pe PciEndpoint, bdfs PciBdfs) error {
+	if !IsKvm(&xpu.xpuConfig.PciIDs) && xpu.targetInfo.Backend == xpuTargetBackendOpi {
+		if err := appendContentToFile(fmt.Sprintf("/sys/bus/pci/devices/%s/virtfn%d/driver_override", bdfs.pfBdf, pe.vfID-1), "nvme"); err != nil {
+			klog.Errorf("write (nvme) to file (/sys/bus/pci/devices/%s/virtfn%d/driver_override) err: %v", bdfs.pfBdf, pe.vfID-1, err)
+			return err
+		}
+		klog.Infof("write (nvme) to file (/sys/bus/pci/devices/%s/virtfn%d/driver_override) successfully", bdfs.pfBdf, pe.vfID-1)
+
+		if err := appendContentToFile("/sys/bus/pci/drivers/nvme/bind", bdfs.vfBdf); err != nil {
+			klog.Errorf("write vfBdf (%s) to file (/sys/bus/pci/drivers/nvme/bind) err: %v", bdfs.vfBdf, err)
+			return err
+		}
+		klog.Infof("write vfBdf (%s) to file (/sys/bus/pci/drivers/nvme/bind) successfully", bdfs.vfBdf)
+	}
+	return nil
+}
+
+// In xpu hardware case with OPI, before Disconnect() is called,
+// $vfBdf is required to be written to the file (/sys/bus/pci/drivers/nvme/unbind),
+// and "(null)" is required to be written to the file (/sys/bus/pci/devices/"$pfBdf"/virtfn"$vfID-1"/driver_override),
+// More information could be seen: https://github.com/opiproject/opi-intel-bridge/blob/0f2c034da270367a6b3078d170afe21a56b86b04/README.md?plain=1#L174
+func (xpu *xpuInitiator) updateNvmeFilesForDisconnect(pe PciEndpoint, bdfs PciBdfs) error {
+	if !(xpu.xpuConfig.PciIDs == KvmPciBridgeIDs) && xpu.targetInfo.Backend == xpuTargetBackendOpi {
+		if err := appendContentToFile("/sys/bus/pci/drivers/nvme/unbind", bdfs.vfBdf); err != nil {
+			klog.Errorf("write vfBdf (%s) to file (/sys/bus/pci/drivers/nvme/unbind) err: %v", bdfs.vfBdf, err)
+			return err
+		}
+		klog.Infof("write vfBdf (%s) to file (/sys/bus/pci/drivers/nvme/unbind) successfully", bdfs.vfBdf)
+
+		if err := appendContentToFile(fmt.Sprintf("/sys/bus/pci/devices/%s/virtfn%d/driver_override", bdfs.pfBdf, pe.vfID-1), "(null)"); err != nil {
+			klog.Errorf("write (null) to file (/sys/bus/pci/devices/%s/virtfn%d/driver_override) err: %v", bdfs.pfBdf, pe.vfID-1, err)
+			return err
+		}
+		klog.Infof("write (null) to file (/sys/bus/pci/devices/%s/virtfn%d/driver_override) successfully", bdfs.pfBdf, pe.vfID-1)
+	}
+	return nil
+}
+
 // ConnectNvme connects to volume using one of 'vfiouser' transport protocol.
 // It uses for the available PCI bridge function for connecting the device.
 // On success it returns the block device path on host.
@@ -191,37 +277,42 @@ func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
 		klog.Errorf("failed to detect existing nvme device for '%s'", xpu.volumeContext["model"])
 	}
 
-	var pf uint32
-	var vf uint32
-	var vPf uint32
+	var pe PciEndpoint
+	var bdfs PciBdfs
 
 	phyIDLock.Lock()
 	defer phyIDLock.Unlock()
-	pf, vf, err = GetAvailablePhysicalFunction(xpu.kvmPciBridges)
+	pe, bdfs, err = GetAvailableFunctions(&xpu.xpuConfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to detect free Nvme virtual function: %w", err)
+		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
 	}
-
-	// Both SMA and OPI always expect Vf value as 0 and detect the right KVM bus from Pf value.
-	vPf = pf*32 + vf
-	klog.Infof("Using next available functions, pf: %d, vf: %d", pf, vf)
+	klog.Infof("Using next available physical function: %d, virtual function: %d", pe.pfID, pe.vfID)
+	xpu.PciBdfs = bdfs
+	xpu.PciEndpoint = pe
 
 	// Ask the backed to connect to the volume
-	if err = xpu.backend.Connect(ctx, &ConnectParams{vPf: vPf}); err != nil {
+	if err = xpu.backend.Connect(ctx, &ConnectParams{
+		PciEndpoint: pe,
+	}); err != nil {
 		return "", err
 	}
 
-	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
-	klog.Infof("Waiting till the device is ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdf)
-	devicePath, err = GetNvmeDeviceName(xpu.volumeContext["model"], bdf)
+	// Update Nvme file for OPI case with xpu hardware
+	if err = xpu.updateNvmeFilesForConnect(pe, bdfs); err != nil {
+		return "", err
+	}
+
+	klog.Infof("Waiting till the device is ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdfs.vfBdf)
+
+	devicePath, err = GetNvmeDeviceName(xpu.volumeContext["model"], bdfs.vfBdf)
 	if err != nil {
 		klog.Errorf("Could not detect the device: %s", err)
 		if errx := xpu.backend.Disconnect(ctx); errx != nil {
-			klog.Errorf("failed to disconnect device: %v", err)
+			klog.Errorf("failed to disconnect device: %v", errx)
 		}
 		return "", err
 	}
-	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdf)
+	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdfs.vfBdf)
 	xpu.devicePath = devicePath
 
 	return devicePath, nil
@@ -231,31 +322,30 @@ func (xpu *xpuInitiator) ConnectNvme(ctx context.Context) (string, error) {
 // It uses for the available PCI bridge function for connecting the device.
 // On success it returns the block device path on host.
 func (xpu *xpuInitiator) ConnectVirtioBlk(ctx context.Context) (string, error) {
-	var pf uint32
-	var vf uint32
-	var vPf uint32
+	var pe PciEndpoint
+	var bdfs PciBdfs
 
 	phyIDLock.Lock()
 	defer phyIDLock.Unlock()
 
 	var err error
-	pf, vf, err = GetAvailablePhysicalFunction(xpu.kvmPciBridges)
+	pe, bdfs, err = GetAvailableFunctions(&xpu.xpuConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to detect free NVMe virtual function: %w", err)
 	}
-	// Both SMA and OPI always expect Vf value as 0 and detect the right KVM bus from Pf value.
-	vPf = pf*32 + vf
-	klog.Infof("Using next available functions, pf: %d, vf: %d", pf, vf)
+	klog.Infof("Using next available physical function: %d, virtual function: %d", pe.pfID, pe.vfID)
+	xpu.PciBdfs = bdfs
+	xpu.PciEndpoint = pe
 
 	// Ask the backed to connect to the volume
-	if err = xpu.backend.Connect(ctx, &ConnectParams{vPf: vPf}); err != nil {
+	if err = xpu.backend.Connect(ctx, &ConnectParams{
+		PciEndpoint: pe,
+	}); err != nil {
 		return "", err
 	}
 
-	bdf := fmt.Sprintf("0000:%02x:%02x.0", pf+1, vf)
-	klog.Infof("Waiting still device ready for '%s' at '%s' ...", xpu.volumeContext["model"], bdf)
 	var devicePath string
-	devicePath, err = GetVirtioBlkDeviceName(bdf, true)
+	devicePath, err = GetVirtioBlkDeviceName(bdfs.vfBdf, true)
 	if err != nil {
 		klog.Errorf("Could not detect the device: %s", err)
 		if errx := xpu.backend.Disconnect(ctx); errx != nil {
@@ -263,7 +353,7 @@ func (xpu *xpuInitiator) ConnectVirtioBlk(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
-	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdf)
+	klog.Infof("Device %s ready for '%s' at '%s'", devicePath, xpu.volumeContext["model"], bdfs.vfBdf)
 	xpu.devicePath = devicePath
 
 	return devicePath, nil
@@ -304,11 +394,13 @@ func (xpu *xpuInitiator) DisconnectNvmfTCP(ctx context.Context) error {
 
 // DisconnectNvme disconnects the target nvme device
 func (xpu *xpuInitiator) DisconnectNvme(ctx context.Context) error {
-	devicePath, err := CheckIfNvmeDeviceExists(xpu.volumeContext["model"], nil)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	klog.Infof("xpu Disconnect nvme device '%s'", xpu.devicePath)
+	if xpu.devicePath == "" {
+		return fmt.Errorf("failed to get block device path")
+	}
+
+	// Update Nvme file for OPI case with xpu hardware
+	if err := xpu.updateNvmeFilesForDisconnect(xpu.PciEndpoint, xpu.PciBdfs); err != nil {
 		return err
 	}
 
@@ -316,7 +408,7 @@ func (xpu *xpuInitiator) DisconnectNvme(ctx context.Context) error {
 		return err
 	}
 
-	return waitForDeviceGone(devicePath)
+	return waitForDeviceGone(xpu.devicePath)
 }
 
 // DisconnectVirtioBlk disconnects the target virtio-blk device

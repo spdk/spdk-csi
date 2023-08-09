@@ -474,7 +474,7 @@ func TestCreateVirtioBlk_Failure(t *testing.T) {
 	// Mock the GetNvmeRemoteController function to return a nil response and an error
 	mockClient.On("CreateVirtioBlk", mock.Anything, mock.Anything).Return(nil, errors.New("Controller does not exist"))
 
-	err := opi.createVirtioBlk(context.TODO(), 1)
+	err := opi.createVirtioBlk(context.TODO(), 1, 1)
 	assert.NotEqual(t, err, nil)
 }
 
@@ -504,7 +504,7 @@ func TestCreateVirtioBlk_Success(t *testing.T) {
 			Name: opiObjectPrefix + opi.volumeContext["mode"],
 		}, nil)
 
-	err := opi.createVirtioBlk(context.TODO(), 1)
+	err := opi.createVirtioBlk(context.TODO(), 1, 1)
 	assert.Equal(t, err, nil)
 }
 
@@ -609,7 +609,7 @@ func TestCreateNvmeController(t *testing.T) {
 		&opiapiStorage.NvmeController{
 			Name: opiObjectPrefix + opi.volumeContext["model"],
 		}, nil)
-	err := opi.createNvmeController(context.TODO(), 1)
+	err := opi.createNvmeController(context.TODO(), 1, 1)
 	assert.Equal(t, err, nil)
 }
 
