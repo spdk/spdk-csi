@@ -8,7 +8,7 @@ SPDKIMAGE=spdkdev:latest
 
 # FIXME(avalluri): Using 'main' image instead of release image as the latest (v0.1.1) does support KVM.
 # Move to release v0.1.2+ image once it is available.
-OPIIMAGE=opiproject/opi-spdk-bridge@sha256:573217ac276e2c8a8d4e8a26acfba444843ac22b74efef2a1a37ceea9b570b38
+OPIIMAGE=opiproject/opi-spdk-bridge@sha256:885f751030d83e6d13ca4efbdf1c1f5f41a8803f0bd9ff78d9b2922d6170532c
 
 JSONRPC_IP=127.0.0.1
 JSONRPC_PORT=9009

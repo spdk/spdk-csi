@@ -23,7 +23,6 @@ import (
 	"google.golang.org/grpc"
 	"k8s.io/klog"
 
-	opiapiCommon "github.com/opiproject/opi-api/common/v1/gen/go"
 	opiapiStorage "github.com/opiproject/opi-api/storage/v1alpha1/gen/go"
 )
 
@@ -439,9 +438,7 @@ func (i *opiInitiatorVirtioBlk) createVirtioBlk(ctx context.Context, physID uint
 			PcieId: &opiapiStorage.PciEndpoint{
 				PhysicalFunction: int32(physID),
 			},
-			VolumeId: &opiapiCommon.ObjectKey{
-				Value: i.volumeContext["model"],
-			},
+			VolumeNameRef: i.volumeContext["model"],
 		},
 		VirtioBlkId: virtioBlkID,
 	}

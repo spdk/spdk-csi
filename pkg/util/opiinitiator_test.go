@@ -67,6 +67,19 @@ func (m *MockNvmeRemoteControllerServiceClient) GetNvmeRemoteController(ctx cont
 	return nil, args.Error(1)
 }
 
+func (m *MockNvmeRemoteControllerServiceClient) ResetNvmeRemoteController(ctx context.Context, in *opiapiStorage.ResetNvmeRemoteControllerRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	args := m.Called(ctx, in)
+	if args.Get(0) != nil {
+		return args.Get(0).(*emptypb.Empty), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *MockNvmeRemoteControllerServiceClient) StatsNvmeRemoteController(ctx context.Context, in *opiapiStorage.StatsNvmeRemoteControllerRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmeRemoteControllerResponse, error) {
+	args := m.Called(ctx, in)
+	return nil, args.Error(1)
+}
+
 func (m *MockNvmeRemoteControllerServiceClient) CreateNvmePath(ctx context.Context, in *opiapiStorage.CreateNvmePathRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmePath, error) {
 	args := m.Called(ctx, in)
 	return args.Get(0).(*opiapiStorage.NvmePath), args.Error(1)
@@ -95,9 +108,9 @@ func (m *MockNvmeRemoteControllerServiceClient) GetNvmePath(ctx context.Context,
 	return nil, args.Error(1)
 }
 
-func (m *MockNvmeRemoteControllerServiceClient) NvmePathStats(ctx context.Context, in *opiapiStorage.NvmePathStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmePathStatsResponse, error) {
+func (m *MockNvmeRemoteControllerServiceClient) StatsNvmePath(ctx context.Context, in *opiapiStorage.StatsNvmePathRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmePathResponse, error) {
 	args := m.Called(ctx, in)
-	return args.Get(0).(*opiapiStorage.NvmePathStatsResponse), args.Error(1)
+	return args.Get(0).(*opiapiStorage.StatsNvmePathResponse), args.Error(1)
 }
 
 func (m *MockNvmeRemoteControllerServiceClient) ListNvmeRemoteNamespaces(ctx context.Context, in *opiapiStorage.ListNvmeRemoteNamespacesRequest, _ ...grpc.CallOption) (*opiapiStorage.ListNvmeRemoteNamespacesResponse, error) {
@@ -105,14 +118,14 @@ func (m *MockNvmeRemoteControllerServiceClient) ListNvmeRemoteNamespaces(ctx con
 	return args.Get(0).(*opiapiStorage.ListNvmeRemoteNamespacesResponse), args.Error(1)
 }
 
-func (m *MockNvmeRemoteControllerServiceClient) NvmeRemoteControllerReset(ctx context.Context, in *opiapiStorage.NvmeRemoteControllerResetRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+func (m *MockNvmeRemoteControllerServiceClient) NvmeRemoteControllerReset(ctx context.Context, in *opiapiStorage.ResetNvmeRemoteControllerRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
 	args := m.Called(ctx, in)
 	return args.Get(0).(*emptypb.Empty), args.Error(1)
 }
 
-func (m *MockNvmeRemoteControllerServiceClient) NvmeRemoteControllerStats(ctx context.Context, in *opiapiStorage.NvmeRemoteControllerStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmeRemoteControllerStatsResponse, error) {
+func (m *MockNvmeRemoteControllerServiceClient) NvmeRemoteControllerStats(ctx context.Context, in *opiapiStorage.StatsNvmeRemoteControllerRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmeRemoteControllerResponse, error) {
 	args := m.Called(ctx, in)
-	return args.Get(0).(*opiapiStorage.NvmeRemoteControllerStatsResponse), args.Error(1)
+	return args.Get(0).(*opiapiStorage.StatsNvmeRemoteControllerResponse), args.Error(1)
 }
 
 type MockFrontendVirtioBlkServiceClient struct {
@@ -153,9 +166,9 @@ func (i *MockFrontendVirtioBlkServiceClient) GetVirtioBlk(ctx context.Context, i
 	return nil, args.Error(1)
 }
 
-func (i *MockFrontendVirtioBlkServiceClient) VirtioBlkStats(ctx context.Context, in *opiapiStorage.VirtioBlkStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.VirtioBlkStatsResponse, error) {
+func (i *MockFrontendVirtioBlkServiceClient) StatsVirtioBlk(ctx context.Context, in *opiapiStorage.StatsVirtioBlkRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsVirtioBlkResponse, error) {
 	args := i.Called(ctx, in)
-	return args.Get(0).(*opiapiStorage.VirtioBlkStatsResponse), args.Error(1)
+	return args.Get(0).(*opiapiStorage.StatsVirtioBlkResponse), args.Error(1)
 }
 
 type MockFrontendNvmeServiceClient struct {
@@ -194,7 +207,7 @@ func (i *MockFrontendNvmeServiceClient) GetNvmeSubsystem(ctx context.Context, in
 	return nil, args.Error(1)
 }
 
-func (i *MockFrontendNvmeServiceClient) NvmeSubsystemStats(_ context.Context, _ *opiapiStorage.NvmeSubsystemStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmeSubsystemStatsResponse, error) {
+func (i *MockFrontendNvmeServiceClient) StatsNvmeSubsystem(_ context.Context, _ *opiapiStorage.StatsNvmeSubsystemRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmeSubsystemResponse, error) {
 	return nil, nil
 }
 
@@ -230,7 +243,7 @@ func (i *MockFrontendNvmeServiceClient) GetNvmeController(ctx context.Context, i
 	return nil, args.Error(1)
 }
 
-func (i *MockFrontendNvmeServiceClient) NvmeControllerStats(_ context.Context, _ *opiapiStorage.NvmeControllerStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmeControllerStatsResponse, error) {
+func (i *MockFrontendNvmeServiceClient) StatsNvmeController(_ context.Context, _ *opiapiStorage.StatsNvmeControllerRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmeControllerResponse, error) {
 	return nil, nil
 }
 
@@ -266,7 +279,7 @@ func (i *MockFrontendNvmeServiceClient) GetNvmeNamespace(ctx context.Context, in
 	return nil, args.Error(1)
 }
 
-func (i *MockFrontendNvmeServiceClient) NvmeNamespaceStats(_ context.Context, _ *opiapiStorage.NvmeNamespaceStatsRequest, _ ...grpc.CallOption) (*opiapiStorage.NvmeNamespaceStatsResponse, error) {
+func (i *MockFrontendNvmeServiceClient) StatsNvmeNamespace(_ context.Context, _ *opiapiStorage.StatsNvmeNamespaceRequest, _ ...grpc.CallOption) (*opiapiStorage.StatsNvmeNamespaceResponse, error) {
 	return nil, nil
 }
 
