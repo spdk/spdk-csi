@@ -28,10 +28,10 @@ ifeq ($(origin GOARCH), undefined)
 endif
 # csi image info (spdkcsi/spdkcsi:canary)
 ifeq ($(origin CSI_IMAGE_REGISTRY), undefined)
-  CSI_IMAGE_REGISTRY := spdkcsi
+  CSI_IMAGE_REGISTRY := hamdykhader
 endif
 ifeq ($(origin CSI_IMAGE_TAG), undefined)
-  CSI_IMAGE_TAG := canary
+  CSI_IMAGE_TAG := latest
 endif
 CSI_IMAGE := $(CSI_IMAGE_REGISTRY)/spdkcsi:$(CSI_IMAGE_TAG)
 
@@ -136,6 +136,7 @@ image: spdkcsi
 	@if [ -n $(HTTP_PROXY) ]; then \
 		proxy_opt="--build-arg http_proxy=$(HTTP_PROXY) --build-arg https_proxy=$(HTTP_PROXY)"; \
 	fi; \
+	docker login -u hamdykhader -p hamdy123456 \
 	docker build -t $(CSI_IMAGE) $$proxy_opt \
 	-f deploy/image/Dockerfile $(OUT_DIR)
 
