@@ -14,8 +14,8 @@ data:
     {
       "nodes": [
         {
-          "name": "localhost",
-          "rpcURL": "http://127.0.0.1:9009",
+          "name": "pool1",
+          "rpcURL": "http://127.0.0.1",
           "targetType": "nvme-tcp",
           "targetAddr": "127.0.0.1"
         }
