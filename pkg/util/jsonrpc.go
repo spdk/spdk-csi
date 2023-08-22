@@ -84,6 +84,7 @@ type SpdkNode interface {
 	PublishVolume(lvolID string) error
 	UnpublishVolume(lvolID string) error
 	CreateSnapshot(lvolName, snapshotName string) (string, error)
+	DeleteSnapshot(snapshotID string) error
 }
 
 // logical volume store
@@ -278,18 +279,27 @@ func (client *rpcClient) deleteVolume(lvolID string) error {
 	return err
 }
 
-func (client *rpcClient) snapshot(lvolName, snapShotName string) (string, error) {
-	params := struct {
-		LvolName     string `json:"lvol_name"`
-		SnapShotName string `json:"snapshot_name"`
-	}{
-		LvolName:     lvolName,
-		SnapShotName: snapShotName,
+func (client *rpcClient) deleteSnapshot(snapshotID string) error {
+	err := client.callSBCLI("DELETE",
+		fmt.Sprintf("csi/delete_snapshot/%s", snapshotID), nil, nil)
+
+	if errorMatches(err, ErrJSONNoSuchDevice) {
+		err = ErrJSONNoSuchDevice // may happen in concurrency
 	}
 
-	var snapshotID string
-	err := client.call("bdev_lvol_snapshot", &params, &snapshotID)
+	return err
+}
 
+func (client *rpcClient) snapshot(lvolID, snapShotName string) (string, error) {
+	params := struct {
+		LvolName     string `json:"lvol_id"`
+		SnapShotName string `json:"snapshot_name"`
+	}{
+		LvolName:     lvolID,
+		SnapShotName: snapShotName,
+	}
+	var snapshotID string
+	err := client.callSBCLI("POST", "/csi/create_snapshot", &params, &snapshotID)
 	return snapshotID, err
 }
 
