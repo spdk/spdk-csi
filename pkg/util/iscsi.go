@@ -130,6 +130,15 @@ func (node *nodeISCSI) DeleteVolume(lvolID string) error {
 	return nil
 }
 
+func (node *nodeISCSI) DeleteSnapshot(snapshotID string) error {
+	err := node.client.deleteVolume(snapshotID)
+	if err != nil {
+		return err
+	}
+	klog.V(5).Infof("snapshot deleted: %s", snapshotID)
+	return nil
+}
+
 // PublishVolume exports a volume through ISCSI target
 func (node *nodeISCSI) PublishVolume(lvolID string) error {
 	exists, err := node.isVolumeCreated(lvolID)
