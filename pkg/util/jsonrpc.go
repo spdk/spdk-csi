@@ -299,7 +299,7 @@ func (client *rpcClient) snapshot(lvolID, snapShotName string) (string, error) {
 		SnapShotName: snapShotName,
 	}
 	var snapshotID string
-	err := client.callSBCLI("POST", "/csi/create_snapshot", &params, &snapshotID)
+	err := client.callSBCLI("POST", "csi/create_snapshot", &params, &snapshotID)
 	return snapshotID, err
 }
 
