@@ -38,7 +38,7 @@ spec:
           capabilities:
             add: ["SYS_ADMIN"]
           allowPrivilegeEscalation: true
-        image: spdkcsi/spdkcsi:canary
+        image: hamdykhader/spdkcsi:latest
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"
