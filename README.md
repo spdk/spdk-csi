@@ -13,7 +13,7 @@ for detailed introduction.
 
 ## Supported platforms
 
-This plugin conforms to [CSI Spec v1.6.0](https://github.com/container-storage-interface/spec/blob/v1.6.0/spec.md).
+This plugin conforms to [CSI Spec v1.7.0](https://github.com/container-storage-interface/spec/blob/v1.7.0/spec.md).
 It is currently developed and tested only on Kubernetes.
 
 This plugin supports `x86_64` and `Arm64` architectures.

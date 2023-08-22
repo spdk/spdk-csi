@@ -3,7 +3,7 @@ module github.com/spdk/spdk-csi
 go 1.19
 
 require (
-	github.com/container-storage-interface/spec v1.6.0
+	github.com/container-storage-interface/spec v1.7.0
 	github.com/google/uuid v1.3.0
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
 	github.com/onsi/gomega v1.19.0
