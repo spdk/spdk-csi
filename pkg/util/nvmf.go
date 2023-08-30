@@ -33,7 +33,7 @@ type NodeNVMf struct {
 
 // func newNVMf(client *rpcClient, targetType, targetAddr string) *nodeNVMf {
 // config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret
-func newNVMf(cluster_id, cluster_ip, cluster_secret string) *NodeNVMf {
+func NewNVMf(cluster_id, cluster_ip, cluster_secret string) *NodeNVMf {
 	client := rpcClient{
 		cluster_id:     cluster_id,
 		cluster_ip:     cluster_ip,

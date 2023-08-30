@@ -270,7 +270,6 @@ func (cs *controllerServer) unpublishVolume(volumeID string) error {
 func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	server := controllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
-		spdkNode:                util.NodeNVMf{},
 		volumeLocks:             util.NewVolumeLocks(),
 	}
 
@@ -299,8 +298,8 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 		return nil, err
 	}
 
-	spdkNode, err := util.NewNVMf(config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret)
-	if err != nil {
+	spdkNode := util.NewNVMf(config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret)
+	if spdkNode == nil {
 		klog.Errorf("failed to create spdk node %s: %s", config.Simplybk.Uuid, err.Error())
 		return nil, fmt.Errorf("no valid spdk node found")
 	} else {
