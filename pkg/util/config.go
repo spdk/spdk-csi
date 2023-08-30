@@ -18,7 +18,7 @@ package util
 
 const (
 	// TODO: move hardcoded settings to config map
-	cfgRPCTimeoutSeconds = 20
+	cfgRPCTimeoutSeconds = 60
 	cfgLvolClearMethod   = "unmap" // none, unmap, write_zeroes
 	cfgLvolThinProvision = true
 	cfgNVMfSvcPort       = "4420"

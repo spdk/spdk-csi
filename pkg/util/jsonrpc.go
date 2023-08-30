@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 )
 
 // SpdkNode defines interface for SPDK storage node
@@ -124,35 +123,35 @@ var (
 
 // jsonrpc http proxy
 type rpcClient struct {
-	rpcURL     string
-	rpcUser    string
-	rpcPass    string
-	httpClient *http.Client
-	rpcID      int32 // json request message ID, auto incremented
+	cluster_id     string
+	cluster_ip     string
+	cluster_secret string
+	httpClient     *http.Client
+	rpcID          int32 // json request message ID, auto incremented
 }
 
-func NewSpdkNode(rpcURL, rpcUser, rpcPass, targetType, targetAddr string) (SpdkNode, error) {
-	client := rpcClient{
-		rpcURL:     rpcURL,
-		rpcUser:    rpcUser,
-		rpcPass:    rpcPass,
-		httpClient: &http.Client{Timeout: cfgRPCTimeoutSeconds * time.Second},
-	}
-
-	switch strings.ToLower(targetType) {
-	case "nvme-rdma":
-		return newNVMf(&client, "RDMA", targetAddr), nil
-	case "nvme-tcp":
-		return newNVMf(&client, "TCP", targetAddr), nil
-	case "iscsi":
-		return newISCSI(&client, targetAddr), nil
-	default:
-		return nil, fmt.Errorf("unknown transport: %s", targetType)
-	}
-}
+//func NewSpdkNode(rpcURL, rpcUser, rpcPass, targetType, targetAddr string) (SpdkNode, error) {
+//	client := rpcClient{
+//		rpcURL:     rpcURL,
+//		rpcUser:    rpcUser,
+//		rpcPass:    rpcPass,
+//		httpClient: &http.Client{Timeout: cfgRPCTimeoutSeconds * time.Second},
+//	}
+//
+//	switch strings.ToLower(targetType) {
+//	case "nvme-rdma":
+//		return newNVMf(&client, "RDMA", targetAddr), nil
+//	case "nvme-tcp":
+//		return newNVMf(&client, "TCP", targetAddr), nil
+//	case "iscsi":
+//		return newISCSI(&client, targetAddr), nil
+//	default:
+//		return nil, fmt.Errorf("unknown transport: %s", targetType)
+//	}
+//}
 
 func (client *rpcClient) info() string {
-	return client.rpcURL
+	return client.cluster_id
 }
 
 func (client *rpcClient) lvStores() ([]LvStore, error) {
@@ -359,12 +358,12 @@ func (client *rpcClient) call(method string, args, result interface{}) error {
 		return fmt.Errorf("%s: %w", method, err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, client.rpcURL, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, client.cluster_ip, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("%s: %w", method, err)
 	}
 
-	req.SetBasicAuth(client.rpcUser, client.rpcPass)
+	//req.SetBasicAuth(client.rpcUser, client.rpcPass)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.httpClient.Do(req)
@@ -426,12 +425,14 @@ func (client *rpcClient) callSBCLI(method string, path string, args, result inte
 		}
 	}
 
-	requestURL := fmt.Sprintf("%s/%s", client.rpcURL, path)
+	requestURL := fmt.Sprintf("http://%s/%s", client.cluster_ip, path)
 	req, err := http.NewRequest(method, requestURL, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("%s: %w", method, err)
 	}
 
+	req.Header.Add("cluster_id", client.cluster_id)
+	req.Header.Add("secret", client.cluster_secret)
 	//req.SetBasicAuth(client.rpcUser, client.rpcPass)
 	req.Header.Set("Content-Type", "application/json")
 

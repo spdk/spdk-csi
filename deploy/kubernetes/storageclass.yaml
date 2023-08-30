@@ -9,5 +9,6 @@ metadata:
 provisioner: csi.spdk.io
 parameters:
   fsType: ext4
+  pool_name: pool1
 reclaimPolicy: Delete
 volumeBindingMode: Immediate

@@ -12,12 +12,8 @@ data:
   # targetAddr: target service IP
   config.json: |-
     {
-      "nodes": [
-        {
-          "name": "pool1",
-          "rpcURL": "http://34.244.195.34",
-          "targetType": "nvme-tcp",
-          "targetAddr": "127.0.0.1"
-        }
-      ]
+      "simplybk": {
+        "uuid": "185a1bba-b16f-4b99-b7e9-a983f193342c",
+        "ip": "34.244.195.34"
+      }
     }
