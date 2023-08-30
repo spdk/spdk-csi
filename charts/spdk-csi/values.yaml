@@ -15,6 +15,14 @@ image:
     repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
     tag: v2.8.0
     pullPolicy: IfNotPresent
+  csiSnapshotter:
+    repository: registry.k8s.io/sig-storage/csi-snapshotter
+    tag: v6.2.2
+    pullPolicy: IfNotPresent
+  externalSnapshotter:
+    repository: registry.k8s.io/sig-storage/snapshot-controller
+    tag: v6.2.2
+    pullPolicy: IfNotPresent
 
 serviceAccount:
   # Specifies whether a serviceAccount should be created
@@ -42,6 +50,27 @@ storageclass:
 
 controller:
   replicas: 1
+
+# The single snapshot controller deployment works for all CSI drivers
+# in a cluster. So enable it only if you kubernetes cluster does not
+# have a snapshot controller
+externalSnapshotter:
+  enabled: false
+  name: snapshot-controller
+  priorityClassName: system-cluster-critical
+  controller:
+    replicas: 1
+  resources:
+    limits:
+      memory: 300Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+  # Create volume snapshot CRDs.
+  customResourceDefinitions:
+    # if set true, VolumeSnapshot, VolumeSnapshotContent and
+    # VolumeSnapshotClass CRDs will be created.
+    enabled: true
 
 # Configuration for the CSI to connect to the cluster
 csiConfig:

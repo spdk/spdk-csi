@@ -2,7 +2,7 @@
 
 # This script can be used to install/delete snapshotcontroller and snapshot beta CRD
 
-SNAPSHOT_VERSION=${SNAPSHOT_VERSION:-"v3.0.3"}
+SNAPSHOT_VERSION=${SNAPSHOT_VERSION:-"v6.2.2"}
 
 TEMP_DIR="$(mktemp -d)"
 SNAPSHOTTER_URL="https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOT_VERSION}"
@@ -24,7 +24,7 @@ function install_snapshot_controller() {
 
 	create_or_delete_resource "create" ${namespace}
 
-	pod_ready=$(kubectl get pods -l app=snapshot-controller -n ${namespace} -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+	pod_ready=false
 	INC=0
 	until [[ "${pod_ready}" == "true" || $INC -gt 20 ]]; do
 		sleep 10

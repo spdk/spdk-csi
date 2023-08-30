@@ -326,6 +326,7 @@ function prepare_k8s_cluster() {
 	sudo modprobe vfio-pci
 	export KUBE_VERSION MINIKUBE_VERSION
 	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" up
+	HOME="$HOME" "${ROOTDIR}/scripts/install-snapshot.sh" install kube-system
 }
 
 # FIXME (JingYan): after starting the container, instead of waiting for a fixed number of seconds before executing commands

@@ -26,7 +26,7 @@ Status: **Beta**
 
 SPDK-CSI is currently developed and tested with `Go 1.19`, `Docker 20.10` and `Kubernetes 1.25.0` on `Ubuntu 22.04`.
 
-Minimal requirement: Go 1.19+, Docker 18.03+ and Kubernetes 1.13+.
+Minimal requirement: Go 1.19+, Docker 18.03+ and Kubernetes 1.20+.
 
 ## Setup
 
@@ -128,7 +128,9 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
 2. Install snapshot controller and CRD
 
   ```bash
-    SNAPSHOT_VERSION="v3.0.3" ./scripts/install-snapshot.sh install
+    # The snapshot controller functions with all CSI drivers in a cluster.
+    # Hence, you can skip it if your kubernetes cluster already has a snapshot controller.
+    SNAPSHOT_VERSION="v6.2.2" ./scripts/install-snapshot.sh install
 
     # Check status
     $ kubectl get pod snapshot-controller-0
@@ -211,7 +213,7 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
 
 4. Delete snapshot controller and CRD
   ```bash
-  SNAPSHOT_VERSION="v3.0.3" ./scripts/install-snapshot.sh cleanup
+  SNAPSHOT_VERSION="v6.2.2" ./scripts/install-snapshot.sh cleanup
   ```
 
 5. Teardown Kubernetes test cluster

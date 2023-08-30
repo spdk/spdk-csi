@@ -2,16 +2,8 @@
 # Copyright (c) Arm Limited and Contributors
 # Copyright (c) Intel Corporation
 
-# Snapshot API version compatibility matrix:
-# v1betav1:
-#   v1.17 =< k8s < v1.20
-#   2.x =< snapshot-controller < v4.x
-# v1:
-#   k8s >= v1.20
-#   snapshot-controller >= v4.x
-# We recommend to use {sidecar, controller, crds} of same version
 ---
-apiVersion: snapshot.storage.k8s.io/v1beta1
+apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
 metadata:
   name: spdk-snapshot

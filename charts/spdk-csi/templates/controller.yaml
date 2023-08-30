@@ -57,6 +57,20 @@ spec:
         - name: spdkcsi-secret
           mountPath: /etc/spdkcsi-secret/
           readOnly: true
+      - name: spdkcsi-snapshotter
+        image: "{{ .Values.image.csiSnapshotter.repository }}:{{ .Values.image.csiSnapshotter.tag }}"
+        args:
+          - "--csi-address=unix:///csi/csi-provisioner.sock"
+          - "--v=5"
+          - "--timeout=150s"
+          - "--leader-election=true"
+          - "--leader-election-namespace={{ .Release.Namespace }}"
+        imagePullPolicy: {{ .Values.image.csiSnapshotter.pullPolicy }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+          - name: socket-dir
+            mountPath: /csi
       volumes:
       - name: socket-dir
         emptyDir:
