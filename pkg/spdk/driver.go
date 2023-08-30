@@ -34,6 +34,9 @@ func Run(conf *util.Config) {
 		controllerCaps = []csi.ControllerServiceCapability_RPC_Type{
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+			csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+			csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+			csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
 		}
 		volumeModes = []csi.VolumeCapability_AccessMode_Mode{
 			csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,

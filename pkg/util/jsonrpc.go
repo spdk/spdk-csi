@@ -278,6 +278,64 @@ func (client *rpcClient) deleteVolume(lvolID string) error {
 	return err
 }
 
+func (client *rpcClient) resizeVolume(lvolID string, newSize int64) (bool, error) {
+	params := struct {
+		Lvol_id  string `json:"lvol_id"`
+		New_size int64  `json:"new_size"`
+	}{
+		Lvol_id:  lvolID,
+		New_size: newSize,
+	}
+	var result bool
+	err := client.callSBCLI("POST", "csi/resize_lvol", &params, &result)
+
+	if err != nil {
+		return false, err
+	}
+	return result, nil
+}
+
+func (client *rpcClient) listSnapshots() ([]map[string]string, error) {
+	var result []struct {
+		Name       string `json:"name"`
+		UUID       string `json:"uuid"`
+		BlockSize  int64  `json:"block_size"`
+		NumBlocks  int64  `json:"num_blocks"`
+		PoolID     string `json:"pool_id"`
+		TargetType string `json:"targetType"`
+		TargetAddr string `json:"targetAddr"`
+		TargetPort string `json:"targetPort"`
+		Nqn        string `json:"nqn"`
+		Model      string `json:"model"`
+		LvolSize   string `json:"lvolSize"`
+	}
+	err := client.callSBCLI("POST", "csi/resize_lvol", nil, &result)
+	if err != nil {
+		return nil, err
+	}
+	var out []map[string]string
+	for _, key := range result {
+		res := map[string]string{
+			"name":    result[key].Name,
+			"uuid":    r.UUID,
+			"pool_id": r.PoolID,
+
+			"targetType": r.TargetType,
+			"targetAddr": r.TargetAddr,
+			"targetPort": r.TargetPort,
+			"nqn":        r.Nqn,
+			"model":      r.Model,
+			"lvolSize":   strconv.FormatInt(r.BlockSize*r.NumBlocks, 10),
+		}
+		out = append(out, res)
+
+		//klog.Infof("Enabling volume access mode: %v", c.String())
+		//vca = append(vca, NewVolumeCapabilityAccessMode(c))
+	}
+
+	return &result, nil
+}
+
 func (client *rpcClient) deleteSnapshot(snapshotID string) error {
 	err := client.callSBCLI("DELETE",
 		fmt.Sprintf("csi/delete_snapshot/%s", snapshotID), nil, nil)

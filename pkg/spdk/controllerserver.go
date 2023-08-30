@@ -267,6 +267,47 @@ func (cs *controllerServer) unpublishVolume(volumeID string) error {
 	return cs.spdkNode.UnpublishVolume(spdkVol.lvolID)
 }
 
+func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	updatedSize := req.GetCapacityRange().GetRequiredBytes()
+	spdkVol, err := getSPDKVol(volumeID)
+	_, err = cs.spdkNode.resizeVolume(spdkVol.lvolID, updatedSize)
+
+	if err != nil {
+		klog.Errorf("failed to resize lvol, LVolID: %s err: %v", spdkVol.lvolID, err)
+		return nil, err
+	}
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         updatedSize,
+		NodeExpansionRequired: true,
+	}, nil
+}
+
+func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+
+	maxEntries := req.MaxEntries
+	sourceVolumeId := req.SourceVolumeId
+	snapshotId := req.SnapshotId
+	entries := cs.spdkNode.listSnapshots()
+	var vca []*csi.Snapshot
+
+	for e := range entries {
+		n := e["name"]
+		snapshotData := *csi.Snapshot{
+			SizeBytes:      size,
+			SnapshotId:     fmt.Sprintf("%s:%s", spdkVol.poolName, snapshotID),
+			SourceVolumeId: spdkVol.lvolID,
+			CreationTime:   creationTime,
+			ReadyToUse:     true,
+		}
+		vca = append(vca, snapshotData)
+	}
+
+	return &csi.ListSnapshotsResponse{
+		Entries: &vca,
+	}, nil
+}
+
 func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	server := controllerServer{
 		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
