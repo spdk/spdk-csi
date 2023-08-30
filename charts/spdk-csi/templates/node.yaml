@@ -29,6 +29,14 @@ spec:
         - "--v=5"
         - "--csi-address=unix:///csi/csi.sock"
         - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.spdk.io/csi.sock"
+        livenessProbe:
+          exec:
+            command:
+            - /csi-node-driver-registrar
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.spdk.io/csi.sock
+            - --mode=kubelet-registration-probe
+          initialDelaySeconds: 30
+          timeoutSeconds: 15
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
