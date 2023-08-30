@@ -299,12 +299,12 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 		return nil, err
 	}
 
-	spdkNode, err := util.newNVMf(config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret)
+	spdkNode, err := util.NewNVMf(config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret)
 	if err != nil {
-		klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
+		klog.Errorf("failed to create spdk node %s: %s", config.Simplybk.Uuid, err.Error())
 		return nil, fmt.Errorf("no valid spdk node found")
 	} else {
-		klog.Infof("spdk node created: name=%s, url=%s", node.Name, node.URL)
+		klog.Infof("spdk node created: name=%s, url=%s", config.Simplybk.Uuid, config.Simplybk.Ip)
 		server.spdkNode = spdkNode
 		return &server, nil
 	}
@@ -339,22 +339,22 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	//return &server, nil
 }
 
-func (cs *DefaultControllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *DefaultControllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *DefaultControllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *DefaultControllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *DefaultControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
+//func (cs *DefaultControllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+//	return nil, status.Error(codes.Unimplemented, "")
+//}
+//
+//func (cs *DefaultControllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+//	return nil, status.Error(codes.Unimplemented, "")
+//}
+//
+//func (cs *DefaultControllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+//	return nil, status.Error(codes.Unimplemented, "")
+//}
+//
+//func (cs *DefaultControllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+//	return nil, status.Error(codes.Unimplemented, "")
+//}
+//
+//func (cs *DefaultControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+//	return nil, status.Error(codes.Unimplemented, "")
+//}
