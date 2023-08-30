@@ -58,6 +58,10 @@ func (node *nodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	lvStore, err := node.client.getLvstore(lvolID)
+	if err != nil {
+		return nil, err
+	}
 
 	return map[string]string{
 		"targetType": node.targetType,
@@ -66,6 +70,7 @@ func (node *nodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
 		"nqn":        node.getVolumeNqn(lvolID),
 		"model":      node.getVolumeModel(lvolID),
 		"lvolSize":   strconv.FormatInt(lvol.BlockSize*lvol.NumBlocks, 10),
+		"lvstore":    lvStore,
 	}, nil
 }
 
@@ -83,6 +88,25 @@ func (node *nodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64) (str
 		return "", err
 	}
 	klog.V(5).Infof("volume created: %s", lvolID)
+	return lvolID, nil
+}
+
+// CloneVolume creates a logical volume based on the source volume and returns volume ID
+func (node *nodeNVMf) CloneVolume(lvolName, lvsName, sourceLvolID string) (string, error) {
+	// all volume have an alias ID named lvsName/lvolName
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
+	if err == nil {
+		klog.Warningf("volume already cloned: %s/%s %s", lvsName, lvolName, lvol.UUID)
+		return lvol.UUID, nil
+	}
+	var lvolID string
+	// clone sourceLvol
+	lvolID, err = node.client.cloneVolume(lvolName, sourceLvolID)
+
+	if err != nil {
+		return "", err
+	}
+	klog.V(5).Infof("volume cloned: %s", lvolID)
 	return lvolID, nil
 }
 

@@ -27,6 +27,7 @@ const (
 	controllerPath           = yamlDir + "controller.yaml"
 	nodePath                 = yamlDir + "node.yaml"
 	storageClassPath         = yamlDir + "storageclass.yaml"
+	snapshotStorageClassPath = yamlDir + "snapshotclass.yaml"
 	pvcPath                  = "pvc.yaml"
 	testPodPath              = "testpod.yaml"
 	smaNvmfConfigPath        = "sma-nvmf.yaml"
@@ -36,6 +37,7 @@ const (
 	opiVirtioBlkConfigPath   = "opi-virtioblk.yaml"
 	multiPvcsPath            = "multi-pvc.yaml"
 	testPodWithMultiPvcsPath = "testpod-multi-pvc.yaml"
+	testPodWithSnapshotPath  = "testpod-snapshot.yaml"
 
 	// controller statefulset and node daemonset names
 	controllerStsName = "spdkcsi-controller"
@@ -75,6 +77,7 @@ var csiYamls = []string{
 	controllerPath,
 	nodePath,
 	storageClassPath,
+	snapshotStorageClassPath,
 }
 
 func deployCsi() {
@@ -95,6 +98,20 @@ func deleteCsi() {
 		if err != nil {
 			e2elog.Logf("failed to delete %s: %s", yamlName, err)
 		}
+	}
+}
+
+func deployYaml(yamlName string) {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", yamlName)
+	if err != nil {
+		e2elog.Logf("failed to create %s: %s", yamlName, err)
+	}
+}
+
+func deleteYaml(yamlName string) {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", yamlName)
+	if err != nil {
+		e2elog.Logf("failed to delete %s: %s", yamlName, err)
 	}
 }
 
@@ -363,7 +380,6 @@ func waitForPvcGone(c kubernetes.Interface, pvcName string) error {
 	return nil
 }
 
-//nolint:unparam // Currently, "ns" always receives "nameSpace", skip this linter checking
 func execCommandInPod(f *framework.Framework, c, ns string, opt *metav1.ListOptions) (stdOut, stdErr string) {
 	podPot := getCommandInPodOpts(f, c, ns, opt)
 	stdOut, stdErr, err := f.ExecWithOptions(podPot)
@@ -393,6 +409,20 @@ func getCommandInPodOpts(f *framework.Framework, c, ns string, opt *metav1.ListO
 	}
 }
 
+func writeDataToPod(f *framework.Framework, opt *metav1.ListOptions, data, dataPath string) {
+	execCommandInPod(f, fmt.Sprintf("echo %s > %s", data, dataPath), nameSpace, opt)
+}
+
+func compareDataInPod(f *framework.Framework, opt *metav1.ListOptions, data, dataPath string) error {
+	// read data from PVC
+	persistData, stdErr := execCommandInPod(f, fmt.Sprintf("cat %s", dataPath), nameSpace, opt)
+	Expect(stdErr).Should(BeEmpty())
+	if !strings.Contains(persistData, data) {
+		return fmt.Errorf("data not persistent: expected data %s received data %s ", data, persistData)
+	}
+	return nil
+}
+
 func checkDataPersist(f *framework.Framework) error {
 	data := "Data that needs to be stored"
 	// write data to PVC
@@ -400,7 +430,7 @@ func checkDataPersist(f *framework.Framework) error {
 	opt := metav1.ListOptions{
 		LabelSelector: "app=spdkcsi-pvc",
 	}
-	execCommandInPod(f, fmt.Sprintf("echo %s > %s", data, dataPath), nameSpace, &opt)
+	writeDataToPod(f, &opt, data, dataPath)
 
 	deleteTestPod()
 	err := waitForTestPodGone(f.ClientSet)
@@ -414,14 +444,7 @@ func checkDataPersist(f *framework.Framework) error {
 		return err
 	}
 
-	// read data from PVC
-	persistData, stdErr := execCommandInPod(f, fmt.Sprintf("cat %s", dataPath), nameSpace, &opt)
-	Expect(stdErr).Should(BeEmpty())
-	if !strings.Contains(persistData, data) {
-		return fmt.Errorf("data not persistent: expected data %s received data %s ", data, persistData)
-	}
-
-	return err
+	return compareDataInPod(f, &opt, data, dataPath)
 }
 
 func checkDataPersistForMultiPvcs(f *framework.Framework) error {
@@ -440,7 +463,7 @@ func checkDataPersistForMultiPvcs(f *framework.Framework) error {
 		LabelSelector: "app=spdkcsi-pvc",
 	}
 	for i := 0; i < len(dataPaths); i++ {
-		execCommandInPod(f, fmt.Sprintf("echo %s > %s", dataContents[i], dataPaths[i]), nameSpace, &opt)
+		writeDataToPod(f, &opt, dataContents[i], dataPaths[i])
 	}
 
 	deleteTestPodWithMultiPvcs()
@@ -457,10 +480,9 @@ func checkDataPersistForMultiPvcs(f *framework.Framework) error {
 
 	// read data from PVC
 	for i := 0; i < len(dataPaths); i++ {
-		persistData, stdErr := execCommandInPod(f, fmt.Sprintf("cat %s", dataPaths[i]), nameSpace, &opt)
-		Expect(stdErr).Should(BeEmpty())
-		if !strings.Contains(persistData, dataContents[i]) {
-			return fmt.Errorf("data not persistent: expected data %s received data %s ", dataContents[i], persistData)
+		err = compareDataInPod(f, &opt, dataContents[i], dataPaths[i])
+		if err != nil {
+			return err
 		}
 	}
 	return err

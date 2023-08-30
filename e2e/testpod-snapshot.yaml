@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: spdkcsi-pvc-snapshot
+spec:
+  volumeSnapshotClassName: csi-spdk-snapclass
+  source:
+    persistentVolumeClaimName: spdkcsi-pvc
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: spdkcsi-pvc-restored
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi
+  storageClassName: spdkcsi-sc
+  dataSource:
+    name: spdkcsi-pvc-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spdkcsi-test
+  labels:
+    app: spdkcsi-pvc
+spec:
+  containers:
+  - name: alpine
+    image: alpine:3
+    imagePullPolicy: "IfNotPresent"
+    command: ["sleep", "365d"]
+    volumeMounts:
+    - mountPath: "/spdkvol"
+      name: spdk-volume
+  volumes:
+  - name: spdk-volume
+    persistentVolumeClaim:
+      claimName: spdkcsi-pvc-restored

@@ -78,6 +78,7 @@ type SpdkNode interface {
 	LvStores() ([]LvStore, error)
 	VolumeInfo(lvolID string) (map[string]string, error)
 	CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error)
+	CloneVolume(lvolName, lvsName string, sourceLvolID string) (string, error)
 	GetVolume(lvolName, lvsName string) (string, error)
 	DeleteVolume(lvolID string) error
 	PublishVolume(lvolID string) error
@@ -200,6 +201,21 @@ func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64) (
 	if errorMatches(err, ErrJSONNoSpaceLeft) {
 		err = ErrJSONNoSpaceLeft // may happen in concurrency
 	}
+
+	return lvolID, err
+}
+
+func (client *rpcClient) cloneVolume(lvolName, snapshotName string) (string, error) {
+	params := struct {
+		CloneName    string `json:"clone_name"`
+		SnapshotName string `json:"snapshot_name"`
+	}{
+		CloneName:    lvolName,
+		SnapshotName: snapshotName,
+	}
+
+	var lvolID string
+	err := client.call("bdev_lvol_clone", &params, &lvolID)
 
 	return lvolID, err
 }

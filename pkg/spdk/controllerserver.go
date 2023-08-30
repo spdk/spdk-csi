@@ -216,23 +216,37 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 			}
 		}
 	}
+	// schedule a SPDK node/lvstore to create the volume.
+	// if volume content source is specified, using the same node/lvstore as the source volume.
+	var err error
+	var volumeID string
+	if req.GetVolumeContentSource() == nil {
+		// schedule suitable node:lvstore
+		nodeName, lvstore, err2 := cs.schedule(sizeMiB)
+		if err2 != nil {
+			return nil, err2
+		}
+		// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
+		// create a new volume
+		volumeID, err = cs.spdkNodes[nodeName].CreateVolume(req.GetName(), lvstore, sizeMiB)
+		// in the subsequent DeleteVolume() request, a nodeName needs to be specified,
+		// but the current CSI mechanism only passes the VolumeId to DeleteVolume().
+		// therefore, the nodeName is included as part of the VolumeId.
+		vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
+	} else {
+		// find the node/lvstore of the specified content source volume
+		nodeName, lvstore, sourceLvolID, err2 := cs.getSnapshotInfo(req.GetVolumeContentSource())
+		if err2 != nil {
+			return nil, err2
+		}
+		// create a volume cloned from the source volume
+		volumeID, err = cs.spdkNodes[nodeName].CloneVolume(req.GetName(), lvstore, sourceLvolID)
+		vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
+	}
 
-	// schedule suitable node:lvstore
-	nodeName, lvstore, err := cs.schedule(sizeMiB)
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: re-schedule on ErrJSONNoSpaceLeft per optimistic concurrency control
-	volumeID, err := cs.spdkNodes[nodeName].CreateVolume(req.GetName(), lvstore, sizeMiB)
-	if err != nil {
-		return nil, err
-	}
-	// in the subsequent DeleteVolume() request, a nodeName needs to be specified,
-	// but the current CSI mechanism only passes the VolumeId to DeleteVolume().
-	// therefore, the nodeName is included as part of the VolumeId.
-	vol.VolumeId = fmt.Sprintf("%s:%s", nodeName, volumeID)
-
 	return &vol, nil
 }
 
@@ -284,6 +298,30 @@ func (cs *controllerServer) unpublishVolume(volumeID string) error {
 		return err
 	}
 	return cs.spdkNodes[spdkVol.nodeName].UnpublishVolume(spdkVol.lvolID)
+}
+
+func (cs *controllerServer) getSnapshotInfo(vcs *csi.VolumeContentSource) (
+	nodeName, lvstore, sourceLvolID string, err error,
+) {
+	snapshotSource := vcs.GetSnapshot()
+
+	if snapshotSource == nil {
+		err = fmt.Errorf("invalid volume content source, only snapshot source is supported")
+		return
+	}
+	snapSpdkVol, err := getSPDKVol(snapshotSource.GetSnapshotId())
+	if err != nil {
+		return
+	}
+	nodeName = snapSpdkVol.nodeName
+	sourceLvolID = snapSpdkVol.lvolID
+
+	sourceLvolInfo, err := cs.spdkNodes[nodeName].VolumeInfo(sourceLvolID)
+	if err != nil {
+		return
+	}
+	lvstore = sourceLvolInfo["lvstore"]
+	return
 }
 
 // simplest volume scheduler: find first node:lvstore with enough free space

@@ -62,12 +62,17 @@ func (node *nodeISCSI) VolumeInfo(lvolID string) (map[string]string, error) {
 	if !exists {
 		return nil, fmt.Errorf("volume not exists: %s", lvolID)
 	}
+	lvStore, err := node.client.getLvstore(lvolID)
+	if err != nil {
+		return nil, err
+	}
 
 	return map[string]string{
 		"targetAddr": node.targetAddr,
 		"targetPort": node.targetPort,
 		"iqn":        iqnPrefixName + lvolID,
 		"targetType": "iscsi",
+		"lvstore":    lvStore,
 	}, nil
 }
 
@@ -79,12 +84,30 @@ func (node *nodeISCSI) CreateVolume(lvolName, lvsName string, sizeMiB int64) (st
 		klog.Warningf("volume already created: %s", lvol.UUID)
 		return lvol.UUID, nil
 	}
-
 	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB)
 	if err != nil {
 		return "", err
 	}
 	klog.V(5).Infof("volume created: %s", lvolID)
+	return lvolID, nil
+}
+
+// CloneVolume creates a logical volume based on the source volume and returns volume ID
+func (node *nodeISCSI) CloneVolume(lvolName, lvsName, sourceLvolID string) (string, error) {
+	// all volume have an alias ID named lvsName/lvolName
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
+	if err == nil {
+		klog.Warningf("volume already cloned: %s/%s %s", lvsName, lvolName, lvol.UUID)
+		return lvol.UUID, nil
+	}
+	var lvolID string
+	// clone sourceLvol
+	lvolID, err = node.client.cloneVolume(lvolName, sourceLvolID)
+
+	if err != nil {
+		return "", err
+	}
+	klog.V(5).Infof("volume cloned: %s", lvolID)
 	return lvolID, nil
 }
 
