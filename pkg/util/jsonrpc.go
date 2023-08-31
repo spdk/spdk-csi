@@ -296,44 +296,35 @@ func (client *rpcClient) resizeVolume(lvolID string, newSize int64) (bool, error
 }
 
 func (client *rpcClient) listSnapshots() ([]map[string]string, error) {
-	var result []struct {
+	var results []struct {
 		Name       string `json:"name"`
 		UUID       string `json:"uuid"`
-		BlockSize  int64  `json:"block_size"`
-		NumBlocks  int64  `json:"num_blocks"`
+		Size       string `json:"size"`
+		PoolName   string `json:"pool_name"`
 		PoolID     string `json:"pool_id"`
-		TargetType string `json:"targetType"`
-		TargetAddr string `json:"targetAddr"`
-		TargetPort string `json:"targetPort"`
-		Nqn        string `json:"nqn"`
-		Model      string `json:"model"`
-		LvolSize   string `json:"lvolSize"`
+		SourceUuid string `json:"source_uuid"`
+		CreatedAt  string `json:"created_at"`
 	}
-	err := client.callSBCLI("POST", "csi/resize_lvol", nil, &result)
+	err := client.callSBCLI("POST", "csi/list_snapshots", nil, &results)
 	if err != nil {
 		return nil, err
 	}
 	var out []map[string]string
-	for _, key := range result {
+	for _, result := range results {
 		res := map[string]string{
-			"name":    result[key].Name,
-			"uuid":    r.UUID,
-			"pool_id": r.PoolID,
-
-			"targetType": r.TargetType,
-			"targetAddr": r.TargetAddr,
-			"targetPort": r.TargetPort,
-			"nqn":        r.Nqn,
-			"model":      r.Model,
-			"lvolSize":   strconv.FormatInt(r.BlockSize*r.NumBlocks, 10),
+			"name":        result.Name,
+			"uuid":        result.UUID,
+			"size":        result.Size,
+			"pool_name":   result.PoolName,
+			"pool_id":     result.PoolID,
+			"source_uuid": result.SourceUuid,
+			"created_at":  result.CreatedAt,
 		}
 		out = append(out, res)
 
-		//klog.Infof("Enabling volume access mode: %v", c.String())
-		//vca = append(vca, NewVolumeCapabilityAccessMode(c))
 	}
 
-	return &result, nil
+	return out, nil
 }
 
 func (client *rpcClient) deleteSnapshot(snapshotID string) error {
@@ -347,13 +338,15 @@ func (client *rpcClient) deleteSnapshot(snapshotID string) error {
 	return err
 }
 
-func (client *rpcClient) snapshot(lvolID, snapShotName string) (string, error) {
+func (client *rpcClient) snapshot(lvolID, snapShotName, pool_name string) (string, error) {
 	params := struct {
 		LvolName     string `json:"lvol_id"`
 		SnapShotName string `json:"snapshot_name"`
+		PoolName     string `json:"pool_name"`
 	}{
 		LvolName:     lvolID,
 		SnapShotName: snapShotName,
+		PoolName:     pool_name,
 	}
 	var snapshotID string
 	err := client.callSBCLI("POST", "csi/create_snapshot", &params, &snapshotID)

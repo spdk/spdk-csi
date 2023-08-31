@@ -97,16 +97,16 @@ func (node *NodeNVMf) isVolumeCreated(lvolID string) (bool, error) {
 	return node.client.isVolumeCreated(lvolID)
 }
 
-func (node *NodeNVMf) resizeVolume(lvolID string, newSize int64) (bool, error) {
+func (node *NodeNVMf) ResizeVolume(lvolID string, newSize int64) (bool, error) {
 	return node.client.resizeVolume(lvolID, newSize)
 }
 
-func (node *NodeNVMf) listSnapshots() ([]map[string]string, error) {
+func (node *NodeNVMf) ListSnapshots() ([]map[string]string, error) {
 	return node.client.listSnapshots()
 }
 
-func (node *NodeNVMf) CreateSnapshot(lvolID, snapshotName string) (string, error) {
-	snapshotID, err := node.client.snapshot(lvolID, snapshotName)
+func (node *NodeNVMf) CreateSnapshot(lvolID, snapshotName, pool_name string) (string, error) {
+	snapshotID, err := node.client.snapshot(lvolID, snapshotName, pool_name)
 	if err != nil {
 		return "", err
 	}

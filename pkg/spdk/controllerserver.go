@@ -138,8 +138,8 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		klog.Errorf("failed to get spdk volume, volumeID: %s err: %v", volumeID, err)
 		return nil, err
 	}
-
-	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName)
+	pool_name := req.GetParameters()["pool_name"]
+	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName, pool_name)
 	if err != nil {
 		klog.Errorf("failed to create snapshot, volumeID: %s snapshotName: %s err: %v", volumeID, snapshotName, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -271,7 +271,7 @@ func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi
 	volumeID := req.GetVolumeId()
 	updatedSize := req.GetCapacityRange().GetRequiredBytes()
 	spdkVol, err := getSPDKVol(volumeID)
-	_, err = cs.spdkNode.resizeVolume(spdkVol.lvolID, updatedSize)
+	_, err = cs.spdkNode.ResizeVolume(spdkVol.lvolID, updatedSize)
 
 	if err != nil {
 		klog.Errorf("failed to resize lvol, LVolID: %s err: %v", spdkVol.lvolID, err)
@@ -285,26 +285,31 @@ func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi
 
 func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 
-	maxEntries := req.MaxEntries
-	sourceVolumeId := req.SourceVolumeId
-	snapshotId := req.SnapshotId
-	entries := cs.spdkNode.listSnapshots()
-	var vca []*csi.Snapshot
+	entries, _ := cs.spdkNode.ListSnapshots()
+	var vca []*csi.ListSnapshotsResponse_Entry
 
-	for e := range entries {
-		n := e["name"]
-		snapshotData := *csi.Snapshot{
-			SizeBytes:      size,
-			SnapshotId:     fmt.Sprintf("%s:%s", spdkVol.poolName, snapshotID),
-			SourceVolumeId: spdkVol.lvolID,
-			CreationTime:   creationTime,
-			ReadyToUse:     true,
+	for _, entry := range entries {
+		sz, _ := strconv.ParseInt(entry["size"], 10, 64)
+		dt, _ := strconv.ParseInt(entry["created_at"], 10, 64)
+		snapshotData := &csi.Snapshot{
+			SizeBytes:      sz,
+			SnapshotId:     fmt.Sprintf("%s:%s", entry["pool_name"], entry["uuid"]),
+			SourceVolumeId: entry["source_uuid"],
+			CreationTime: &timestamppb.Timestamp{
+				Seconds: dt,
+			},
+			ReadyToUse: true,
 		}
-		vca = append(vca, snapshotData)
+
+		responseData := &csi.ListSnapshotsResponse_Entry{
+			Snapshot: snapshotData,
+		}
+
+		vca = append(vca, responseData)
 	}
 
 	return &csi.ListSnapshotsResponse{
-		Entries: &vca,
+		Entries: vca,
 	}, nil
 }
 
@@ -379,22 +384,14 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	//return &server, nil
 }
 
-//func (cs *DefaultControllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+//func (cs *controllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
 //	return nil, status.Error(codes.Unimplemented, "")
 //}
 //
-//func (cs *DefaultControllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+//func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 //	return nil, status.Error(codes.Unimplemented, "")
 //}
 //
-//func (cs *DefaultControllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-//	return nil, status.Error(codes.Unimplemented, "")
-//}
-//
-//func (cs *DefaultControllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
-//	return nil, status.Error(codes.Unimplemented, "")
-//}
-//
-//func (cs *DefaultControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+//func (cs *controllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 //	return nil, status.Error(codes.Unimplemented, "")
 //}

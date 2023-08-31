@@ -56,16 +56,16 @@ if $PROMPT_FLAG; then
 	esac
 fi
 set -x
-export_proxy
+#export_proxy
 check_os
 allocate_hugepages 2048
 install_packages_"${distro}"
 install_golang
-docker_login
+#docker_login
 # shellcheck disable=SC2119
-build_spdkimage "--force"
+#build_spdkimage "--force"
 build_spdkcsi
-build_test_binary
+#build_test_binary
 
 vm=
 if [ "${PREPARE_VM}" = yes ]; then
@@ -89,7 +89,7 @@ $vm "docker_login"
 $vm sysctl fs.protected_regular=0
 $vm prepare_k8s_cluster
 
-prepare_spdk_storage
-prepare_xpu_node
+#prepare_spdk_storage
+#prepare_xpu_node
 
 echo "End of test environment setup!"
