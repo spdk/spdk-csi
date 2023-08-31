@@ -55,6 +55,16 @@ spec:
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
+      - name: spdkcsi-resizer
+        image: k8s.gcr.io/sig-storage/csi-resizer:v1.7.0
+        imagePullPolicy: "IfNotPresent"
+        args:
+          - "--v=5"
+          - "--csi-address=unix:///csi/csi-provisioner.sock"
+        volumeMounts:
+          - name: socket-dir
+            mountPath: /csi
+
       - name: spdkcsi-controller
         image: hamdykhader/spdkcsi:latest
         imagePullPolicy: "IfNotPresent"

@@ -305,7 +305,7 @@ func (client *rpcClient) listSnapshots() ([]map[string]string, error) {
 		SourceUuid string `json:"source_uuid"`
 		CreatedAt  string `json:"created_at"`
 	}
-	err := client.callSBCLI("POST", "csi/list_snapshots", nil, &results)
+	err := client.callSBCLI("GET", "csi/list_snapshots", nil, &results)
 	if err != nil {
 		return nil, err
 	}

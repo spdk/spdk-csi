@@ -101,25 +101,6 @@ func (node *nodeISCSI) isVolumeCreated(lvolID string) (bool, error) {
 	return node.client.isVolumeCreated(lvolID)
 }
 
-func (node *nodeISCSI) CreateSnapshot(lvolName, snapshotName string) (string, error) {
-	lvsName, err := node.client.getLvstore(lvolName)
-	if err != nil {
-		return "", err
-	}
-	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, snapshotName))
-	if err == nil {
-		klog.Warningf("snapshot already created: %s", lvol.UUID)
-		return lvol.UUID, nil
-	}
-	snapshotID, err := node.client.snapshot(lvolName, snapshotName)
-	if err != nil {
-		return "", err
-	}
-
-	klog.V(5).Infof("snapshot created: %s", snapshotID)
-	return snapshotID, nil
-}
-
 func (node *nodeISCSI) DeleteVolume(lvolID string) error {
 	err := node.client.deleteVolume(lvolID)
 	if err != nil {

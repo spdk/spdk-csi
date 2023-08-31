@@ -12,3 +12,4 @@ parameters:
   pool_name: pool1
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
+allowVolumeExpansion: true
