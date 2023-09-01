@@ -136,8 +136,8 @@ image: spdkcsi
 	@if [ -n $(HTTP_PROXY) ]; then \
 		proxy_opt="--build-arg http_proxy=$(HTTP_PROXY) --build-arg https_proxy=$(HTTP_PROXY)"; \
 	fi; \
-	docker login -u hamdykhader -p hamdy123456 ; \
-	docker build -t $(CSI_IMAGE) $$proxy_opt \
+	sudo docker login -u hamdykhader -p hamdy123456 ; \
+	sudo docker build -t $(CSI_IMAGE) $$proxy_opt \
 	-f deploy/image/Dockerfile $(OUT_DIR)
 
 .PHONY: clean
