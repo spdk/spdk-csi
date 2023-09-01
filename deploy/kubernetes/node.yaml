@@ -15,7 +15,7 @@ spec:
       labels:
         app: spdkcsi-node
     spec:
-      serviceAccount: spdkcsi-node-sa
+      serviceAccountName: spdkcsi-node-sa
       hostNetwork: true
       containers:
       - name: spdkcsi-registrar
@@ -36,7 +36,7 @@ spec:
         securityContext:
           privileged: true
           capabilities:
-            add: ["SYS_ADMIN"]
+            add: ["SYS_ADMIN", "SYS_MODULE"]
           allowPrivilegeEscalation: true
         image: hamdykhader/spdkcsi:latest
         imagePullPolicy: "IfNotPresent"
@@ -53,8 +53,7 @@ spec:
         lifecycle:
           postStart:
             exec:
-              command: ["/bin/sh", "-c",
-                        "/usr/sbin/iscsid || echo failed to start iscsid"]
+              command: ["modprobe", "nvme-tcp"]
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
