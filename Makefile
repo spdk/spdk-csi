@@ -137,8 +137,9 @@ image: spdkcsi
 		proxy_opt="--build-arg http_proxy=$(HTTP_PROXY) --build-arg https_proxy=$(HTTP_PROXY)"; \
 	fi; \
 	sudo docker login -u hamdykhader -p hamdy123456 ; \
-	sudo docker build -t $(CSI_IMAGE) $$proxy_opt \
-	-f deploy/image/Dockerfile $(OUT_DIR)
+	sudo docker build --no-cache -t $(CSI_IMAGE) $$proxy_opt \
+	-f deploy/image/Dockerfile $(OUT_DIR); \
+	sudo docker push $(CSI_IMAGE); \
 
 .PHONY: clean
 clean:
