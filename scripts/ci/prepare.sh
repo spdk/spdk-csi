@@ -91,5 +91,5 @@ $vm prepare_k8s_cluster
 
 #prepare_spdk_storage
 #prepare_xpu_node
-
+sudo ln -s /var/lib/minikube/binaries/v1.25.0/kubectl /usr/local/bin/kubectl
 echo "End of test environment setup!"

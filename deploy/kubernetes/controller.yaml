@@ -17,7 +17,7 @@ spec:
       labels:
         app: spdkcsi-controller
     spec:
-      serviceAccount: spdkcsi-controller-sa
+      serviceAccountName: spdkcsi-controller-sa
       hostNetwork: true
       containers:
       - name: spdkcsi-provisioner
@@ -61,6 +61,7 @@ spec:
         args:
           - "--v=5"
           - "--csi-address=unix:///csi/csi-provisioner.sock"
+          - "--leader-election=false"
         volumeMounts:
           - name: socket-dir
             mountPath: /csi

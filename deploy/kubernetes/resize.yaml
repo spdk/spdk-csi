@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: spdkcsi-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 456Mi
+  storageClassName: spdkcsi-sc

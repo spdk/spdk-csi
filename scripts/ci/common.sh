@@ -56,6 +56,7 @@ function check_os() {
 		distro="ubuntu"
 		;;
 	ubuntu)
+	  sudo apt install linux-modules-extra-$(uname -r) -y
 		distro="ubuntu"
 		;;
 	*)
