@@ -175,7 +175,7 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
   ```bash
     # Create snapshot of the bound PVC
     $ cd deploy/kubernetes
-    $ kubectl apply -f snapshot.yaml
+    $ kubectl apply -f testsnapshot.yaml
 
     # Get details about the snapshot
     $ kubectl get volumesnapshot spdk-snapshot
@@ -194,7 +194,7 @@ Follow [deploy/spdk/README](deploy/spdk/README.md) to deploy SPDK storage servic
 1. Delete PVC snapshot
   ```bash
     cd deploy/kubernetes
-    kubectl delete -f snapshot.yaml
+    kubectl delete -f testsnapshot.yaml
   ```
 
 2. Delete test pod
