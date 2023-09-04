@@ -209,7 +209,22 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		return &vol, nil
 	}
 
-	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB)
+	var source_type, source_id string
+	vol_source := req.GetVolumeContentSource()
+	if vol_source.GetSnapshot() != nil {
+		source_id = vol_source.GetSnapshot().GetSnapshotId()
+		source_type = "snapshot"
+
+	} else if vol_source.GetVolume() != nil {
+		source_id = vol_source.GetVolume().GetVolumeId()
+		source_type = "lvol"
+
+	} else {
+		klog.Errorf("failed to create volume, volumeID: %s err: %v", volumeID, err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB, source_type, source_id)
 	if err != nil {
 		return nil, err
 	}

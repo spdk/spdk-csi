@@ -68,15 +68,8 @@ func (node *NodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
 }
 
 // CreateVolume creates a logical volume and returns volume ID
-func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64) (string, error) {
-	// all volume have an alias ID named lvsName/lvolName
-	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", lvsName, lvolName))
-	if err == nil {
-		klog.Warningf("volume already created: %s/%s %s", lvsName, lvolName, lvol.UUID)
-		return lvol.UUID, nil
-	}
-
-	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB)
+func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string) (string, error) {
+	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB, src_type, src_id)
 	if err != nil {
 		return "", err
 	}
