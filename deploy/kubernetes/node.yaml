@@ -39,7 +39,7 @@ spec:
             add: ["SYS_ADMIN", "SYS_MODULE"]
           allowPrivilegeEscalation: true
         image: hamdykhader/spdkcsi:latest
-        imagePullPolicy: "IfNotPresent"
+        imagePullPolicy: "Always"
         args:
         - "--v=5"
         - "--endpoint=unix:///csi/csi.sock"
@@ -53,7 +53,7 @@ spec:
         lifecycle:
           postStart:
             exec:
-              command: ["/bin/sh", "-c", "modprobe nvme-tcp || echo failed to modprobe nvme-tcp"]
+              command: ["/bin/sh", "-c", "sudo modprobe nvme-tcp || echo failed to modprobe nvme-tcp"]
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
