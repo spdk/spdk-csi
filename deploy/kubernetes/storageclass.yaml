@@ -10,6 +10,12 @@ provisioner: csi.spdk.io
 parameters:
   fsType: ext4
   pool_name: pool1
+  qos_rw_iops: "0"
+  qos_rw_mbytes: "0"
+  qos_r_mbytes: "0"
+  qos_w_mbytes: "0"
+  compression: False
+  encryption: True
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 allowVolumeExpansion: true

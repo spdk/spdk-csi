@@ -221,7 +221,13 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 
 	}
 
-	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB, source_type, source_id)
+	qos_rw_iops := req.GetParameters()["qos_rw_iops"]
+	qos_rw_mbytes := req.GetParameters()["qos_rw_mbytes"]
+	qos_r_mbytes := req.GetParameters()["qos_r_mbytes"]
+	compression := req.GetParameters()["compression"]
+	encryption := req.GetParameters()["encryption"]
+	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB, source_type, source_id, qos_rw_iops,
+		qos_rw_mbytes, qos_r_mbytes, compression, encryption)
 	if err != nil {
 		return nil, err
 	}

@@ -68,8 +68,10 @@ func (node *NodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
 }
 
 // CreateVolume creates a logical volume and returns volume ID
-func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string) (string, error) {
-	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB, src_type, src_id)
+func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string,
+	qos_rw_iops string, qos_rw_mbytes string, qos_r_mbytes string, qos_w_mbytes string, compression string, encryption string) (string, error) {
+	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB, src_type, src_id, qos_rw_iops, qos_rw_mbytes,
+		qos_r_mbytes, qos_w_mbytes, compression, encryption)
 	if err != nil {
 		return "", err
 	}

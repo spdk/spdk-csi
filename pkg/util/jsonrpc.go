@@ -180,7 +180,8 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 	return lvs, nil
 }
 
-func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string) (string, error) {
+func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string,
+	qos_rw_iops string, qos_rw_mbytes string, qos_r_mbytes string, qos_w_mbytes string, compression string, encryption string) (string, error) {
 	params := struct {
 		LvolName      string `json:"lvol_name"`
 		Size          int64  `json:"size"`
@@ -189,12 +190,24 @@ func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64, s
 		ThinProvision bool   `json:"thin_provision"`
 		SourceType    string `json:"src_type"`
 		SourceID      string `json:"src_id"`
+		Qos_rw_iops   string `json:"qos_rw_iops"`
+		Qos_rw_mbytes string `json:"qos_rw_mbytes"`
+		Qos_r_mbytes  string `json:"qos_r_mbytes"`
+		Qos_w_mbytes  string `json:"qos_w_mbytes"`
+		Compression   string `json:"compression"`
+		Encryption    string `json:"encryption"`
 	}{
 		LvolName:      lvolName,
 		Size:          sizeMiB * 1024 * 1024,
 		LvsName:       lvsName,
 		ClearMethod:   cfgLvolClearMethod,
 		ThinProvision: cfgLvolThinProvision,
+		Qos_rw_iops:   qos_rw_iops,
+		Qos_rw_mbytes: qos_rw_mbytes,
+		Qos_r_mbytes:  qos_r_mbytes,
+		Qos_w_mbytes:  qos_w_mbytes,
+		Compression:   compression,
+		Encryption:    encryption,
 	}
 
 	if src_type != "" {
