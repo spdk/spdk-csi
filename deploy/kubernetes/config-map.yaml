@@ -7,9 +7,6 @@ kind: ConfigMap
 metadata:
   name: spdkcsi-cm
 data:
-  # rpcURL: spdk json rpc target
-  # targetType: nvme-rdma, nvme-tcp, iscsi
-  # targetAddr: target service IP
   config.json: |-
     {
       "simplybk": {
