@@ -502,7 +502,7 @@ func (client *rpcClient) callSBCLI(method string, path string, args, result inte
 		return fmt.Errorf("%s: %w", method, err)
 	}
 
-	req.Header.Add("cluster_id", client.cluster_id)
+	req.Header.Add("cluster", client.cluster_id)
 	req.Header.Add("secret", client.cluster_secret)
 	//req.SetBasicAuth(client.rpcUser, client.rpcPass)
 	req.Header.Set("Content-Type", "application/json")
