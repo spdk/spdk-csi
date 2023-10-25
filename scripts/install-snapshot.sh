@@ -22,7 +22,7 @@ function install_snapshot_controller() {
 		namespace="default"
 	fi
 
-	create_or_delete_resource "create" ${namespace}
+	create_or_delete_resource "apply" ${namespace}
 
 	pod_ready=false
 	INC=0
