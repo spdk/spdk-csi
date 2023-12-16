@@ -202,23 +202,23 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		ContentSource: req.GetVolumeContentSource(),
 	}
 
-	pool_name := req.GetParameters()["pool_name"]
-	volumeID, err := cs.spdkNode.GetVolume(req.GetName(), pool_name)
+	klog.V(5).Info("provisioning node from SDK node..")
+	poolName := req.GetParameters()["pool_name"]
+	volumeID, err := cs.spdkNode.GetVolume(req.GetName(), poolName)
 	if err == nil {
-		vol.VolumeId = fmt.Sprintf("%s:%s", pool_name, volumeID)
+		vol.VolumeId = fmt.Sprintf("%s:%s", poolName, volumeID)
+		klog.V(5).Info("volume already exists", vol.VolumeId)
 		return &vol, nil
 	}
 
-	var source_type, source_id string
-	vol_source := req.GetVolumeContentSource()
-	if vol_source.GetSnapshot() != nil {
-		source_id = vol_source.GetSnapshot().GetSnapshotId()
-		source_type = "snapshot"
-
-	} else if vol_source.GetVolume() != nil {
-		source_id = vol_source.GetVolume().GetVolumeId()
-		source_type = "lvol"
-
+	var sourceType, sourceID string
+	volSource := req.GetVolumeContentSource()
+	if volSource.GetSnapshot() != nil {
+		sourceID = volSource.GetSnapshot().GetSnapshotId()
+		sourceType = "snapshot"
+	} else if volSource.GetVolume() != nil {
+		sourceID = volSource.GetVolume().GetVolumeId()
+		sourceType = "lvol"
 	}
 
 	qos_rw_iops := req.GetParameters()["qos_rw_iops"]
@@ -227,12 +227,14 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 	qos_w_mbytes := req.GetParameters()["qos_w_mbytes"]
 	compression := req.GetParameters()["compression"]
 	encryption := req.GetParameters()["encryption"]
-	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB, source_type, source_id, qos_rw_iops,
+	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), poolName, sizeMiB, sourceType, sourceID, qos_rw_iops,
 		qos_rw_mbytes, qos_r_mbytes, qos_w_mbytes, compression, encryption)
 	if err != nil {
+		klog.Errorf("error simplyBlock volume: %v", err)
 		return nil, err
 	}
-	vol.VolumeId = fmt.Sprintf("%s:%s", pool_name, volumeID)
+	vol.VolumeId = fmt.Sprintf("%s:%s", poolName, volumeID)
+	klog.V(5).Info("successfully created volume from SimplyBlock with Volume ID: ", vol.VolumeId)
 	return &vol, nil
 }
 
