@@ -30,12 +30,12 @@ package util
 // 	"testing"
 // )
 
-const (
-	rpcURL  = "http://127.0.0.1:9009"
-	rpcUser = "spdkcsiuser"
-	rpcPass = "spdkcsipass"
-	trAddr  = "127.0.0.1"
-)
+// const (
+// 	rpcURL  = "http://127.0.0.1:9009"
+// 	rpcUser = "spdkcsiuser"
+// 	rpcPass = "spdkcsipass"
+// 	trAddr  = "127.0.0.1"
+// )
 
 // func TestNVMeTCP(t *testing.T) {
 // 	testNVMeoF("nvme-tcp", t)

@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync/atomic"
 
 	"k8s.io/klog"
 )
@@ -108,20 +107,6 @@ type BDev struct {
 	} `json:"driver_specific,omitempty"`
 }
 
-var result []struct {
-	Name       string `json:"name"`
-	UUID       string `json:"uuid"`
-	BlockSize  int64  `json:"block_size"`
-	NumBlocks  int64  `json:"num_blocks"`
-	PoolID     string `json:"pool_id"`
-	TargetType string `json:"targetType"`
-	TargetAddr string `json:"targetAddr"`
-	TargetPort string `json:"targetPort"`
-	Nqn        string `json:"nqn"`
-	Model      string `json:"model"`
-	LvolSize   string `json:"lvolSize"`
-}
-
 // errors deserve special care
 var (
 	// json response errors: errors.New("json: tag-string")
@@ -138,35 +123,35 @@ var (
 
 // jsonrpc http proxy
 type rpcClient struct {
-	cluster_id     string
-	cluster_ip     string
-	cluster_secret string
-	httpClient     *http.Client
-	rpcID          int32 // json request message ID, auto incremented
+	ClusterID     string
+	ClusterIP     string
+	ClusterSecret string
+	httpClient    *http.Client
+	// rpcID          int32 // json request message ID, auto incremented
 }
 
-//func NewSpdkNode(rpcURL, rpcUser, rpcPass, targetType, targetAddr string) (SpdkNode, error) {
-//	client := rpcClient{
-//		rpcURL:     rpcURL,
-//		rpcUser:    rpcUser,
-//		rpcPass:    rpcPass,
-//		httpClient: &http.Client{Timeout: cfgRPCTimeoutSeconds * time.Second},
-//	}
-//
-//	switch strings.ToLower(targetType) {
-//	case "nvme-rdma":
-//		return newNVMf(&client, "RDMA", targetAddr), nil
-//	case "nvme-tcp":
-//		return newNVMf(&client, "TCP", targetAddr), nil
-//	case "iscsi":
-//		return newISCSI(&client, targetAddr), nil
-//	default:
-//		return nil, fmt.Errorf("unknown transport: %s", targetType)
-//	}
-//}
+// func NewSpdkNode(rpcURL, rpcUser, rpcPass, targetType, targetAddr string) (SpdkNode, error) {
+// 	client := rpcClient{
+// 		rpcURL:     rpcURL,
+// 		rpcUser:    rpcUser,
+// 		rpcPass:    rpcPass,
+// 		httpClient: &http.Client{Timeout: cfgRPCTimeoutSeconds * time.Second},
+// 	}
+
+// 	switch strings.ToLower(targetType) {
+// 	case "nvme-rdma":
+// 		return newNVMf(&client, "RDMA", targetAddr), nil
+// 	case "nvme-tcp":
+// 		return newNVMf(&client, "TCP", targetAddr), nil
+// 	case "iscsi":
+// 		return newISCSI(&client, targetAddr), nil
+// 	default:
+// 		return nil, fmt.Errorf("unknown transport: %s", targetType)
+// 	}
+// }
 
 func (client *rpcClient) info() string {
-	return client.cluster_id
+	return client.ClusterID
 }
 
 type CSIPoolsResp struct {
@@ -203,7 +188,7 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 }
 
 // createVolume create a logical volume with simplyblock storage
-func (client *rpcClient) createVolume(sourceType, sourceID string, params CreateLVolData) (string, error) {
+func (client *rpcClient) createVolume(params *CreateLVolData) (string, error) {
 	var lvolID string
 	klog.V(5).Info("params", params)
 	out, err := client.callSBCLI("POST", "/lvol", &params)
@@ -274,16 +259,16 @@ func (client *rpcClient) getVolumeInfo(lvolID string) (map[string]string, error)
 	}, nil
 }
 
-func (client *rpcClient) isVolumeCreated(lvolID string) (bool, error) {
-	_, err := client.getVolume(lvolID)
-	if err != nil {
-		if errors.Is(err, ErrJSONNoSuchDevice) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
+// func (client *rpcClient) isVolumeCreated(lvolID string) (bool, error) {
+// 	_, err := client.getVolume(lvolID)
+// 	if err != nil {
+// 		if errors.Is(err, ErrJSONNoSuchDevice) {
+// 			return false, nil
+// 		}
+// 		return false, err
+// 	}
+// 	return true, nil
+// }
 
 func (client *rpcClient) deleteVolume(lvolID string) error {
 	_, err := client.callSBCLI("DELETE",
@@ -296,14 +281,14 @@ func (client *rpcClient) deleteVolume(lvolID string) error {
 }
 
 type ResizeVolReq struct {
-	Lvol_id  string `json:"lvol_id"`
-	New_size int64  `json:"new_size"`
+	LvolID  string `json:"lvol_id"`
+	NewSize int64  `json:"new_size"`
 }
 
 func (client *rpcClient) resizeVolume(lvolID string, newSize int64) (bool, error) {
 	params := ResizeVolReq{
-		Lvol_id:  lvolID,
-		New_size: newSize,
+		LvolID:  lvolID,
+		NewSize: newSize,
 	}
 	var result bool
 	out, err := client.callSBCLI("POST", "csi/resize_lvol", &params)
@@ -312,7 +297,7 @@ func (client *rpcClient) resizeVolume(lvolID string, newSize int64) (bool, error
 	}
 	result, ok := out.(bool)
 	if !ok {
-		return false, fmt.Errorf("failed to convert the response to []ResizeVolResp type. Interface: %v", out)
+		return false, fmt.Errorf("failed to convert the response to bool type. Interface: %v", out)
 	}
 	return result, nil
 }
@@ -323,18 +308,18 @@ type SnapshotResp struct {
 	Size       string `json:"size"`
 	PoolName   string `json:"pool_name"`
 	PoolID     string `json:"pool_id"`
-	SourceUuid string `json:"source_uuid"`
+	SourceUUID string `json:"source_uuid"`
 	CreatedAt  string `json:"created_at"`
 }
 
-func (client *rpcClient) listSnapshots() ([]SnapshotResp, error) {
-	var results []SnapshotResp
+func (client *rpcClient) listSnapshots() ([]*SnapshotResp, error) {
+	var results []*SnapshotResp
 
 	out, err := client.callSBCLI("GET", "csi/list_snapshots", nil)
 	if err != nil {
 		return nil, err
 	}
-	results, ok := out.([]SnapshotResp)
+	results, ok := out.([]*SnapshotResp)
 	if !ok {
 		return nil, fmt.Errorf("failed to convert the response to []ResizeVolResp type. Interface: %v", out)
 	}
@@ -372,103 +357,102 @@ func (client *rpcClient) snapshot(lvolID, snapShotName, poolName string) (string
 }
 
 // getLvstore get lvstore name for specific lvol
-func (client *rpcClient) getLvstore(lvolID string) (string, error) {
-	lvol, err := client.getVolume(lvolID)
-	if err != nil {
-		return "", err
-	}
-	if lvol.DriverSpecific == nil {
-		return "", fmt.Errorf("no driver_specific for %s", lvolID)
-	}
-	lvstoreUUID := lvol.DriverSpecific.Lvol.LvolStoreUUID
-	lvstores, err := client.lvStores()
-	if err != nil {
-		return "", err
-	}
-	for i := range lvstores {
-		if lvstores[i].UUID == lvstoreUUID {
-			return lvstores[i].Name, nil
-		}
-	}
-	return "", fmt.Errorf("lvstore for %s not found", lvolID)
-}
+// func (client *rpcClient) getLvstore(lvolID string) (string, error) {
+// 	lvol, err := client.getVolume(lvolID)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	if lvol.DriverSpecific == nil {
+// 		return "", fmt.Errorf("no driver_specific for %s", lvolID)
+// 	}
+// 	lvstoreUUID := lvol.DriverSpecific.Lvol.LvolStoreUUID
+// 	lvstores, err := client.lvStores()
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	for i := range lvstores {
+// 		if lvstores[i].UUID == lvstoreUUID {
+// 			return lvstores[i].Name, nil
+// 		}
+// 	}
+// 	return "", fmt.Errorf("lvstore for %s not found", lvolID)
+// }
 
 // low level rpc request/response handling
-func (client *rpcClient) call(method string, args, result interface{}) error {
-	type rpcRequest struct {
-		Ver    string `json:"jsonrpc"`
-		ID     int32  `json:"id"`
-		Method string `json:"method"`
-	}
+// func (client *rpcClient) call(method string, args, result interface{}) error {
+// 	type rpcRequest struct {
+// 		Ver    string `json:"jsonrpc"`
+// 		ID     int32  `json:"id"`
+// 		Method string `json:"method"`
+// 	}
 
-	id := atomic.AddInt32(&client.rpcID, 1)
-	request := rpcRequest{
-		Ver:    "2.0",
-		ID:     id,
-		Method: method,
-	}
+// 	id := atomic.AddInt32(&client.rpcID, 1)
+// 	request := rpcRequest{
+// 		Ver:    "2.0",
+// 		ID:     id,
+// 		Method: method,
+// 	}
 
-	var data []byte
-	var err error
+// 	var data []byte
+// 	var err error
 
-	if args == nil {
-		data, err = json.Marshal(request)
-	} else {
-		requestWithParams := struct {
-			rpcRequest
-			Params interface{} `json:"params"`
-		}{
-			request,
-			args,
-		}
-		data, err = json.Marshal(requestWithParams)
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", method, err)
-	}
+// 	if args == nil {
+// 		data, err = json.Marshal(request)
+// 	} else {
+// 		requestWithParams := struct {
+// 			rpcRequest
+// 			Params interface{} `json:"params"`
+// 		}{
+// 			request,
+// 			args,
+// 		}
+// 		data, err = json.Marshal(requestWithParams)
+// 	}
+// 	if err != nil {
+// 		return fmt.Errorf("%s: %w", method, err)
+// 	}
 
-	req, err := http.NewRequest(http.MethodPost, client.cluster_ip, bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("%s: %w", method, err)
-	}
+// 	req, err := http.NewRequest(http.MethodPost, client.ClusterIP, bytes.NewReader(data))
+// 	if err != nil {
+// 		return fmt.Errorf("%s: %w", method, err)
+// 	}
 
-	//req.SetBasicAuth(client.rpcUser, client.rpcPass)
-	req.Header.Set("Content-Type", "application/json")
+// 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s: %w", method, err)
-	}
+// 	resp, err := client.httpClient.Do(req)
+// 	if err != nil {
+// 		return fmt.Errorf("%s: %w", method, err)
+// 	}
 
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("%s: HTTP error code: %d", method, resp.StatusCode)
-	}
+// 	defer resp.Body.Close()
+// 	if resp.StatusCode >= http.StatusBadRequest {
+// 		return fmt.Errorf("%s: HTTP error code: %d", method, resp.StatusCode)
+// 	}
 
-	response := struct {
-		ID    int32 `json:"id"`
-		Error struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-		Result interface{} `json:"result"`
-	}{
-		Result: result,
-	}
+// 	response := struct {
+// 		ID    int32 `json:"id"`
+// 		Error struct {
+// 			Code    int    `json:"code"`
+// 			Message string `json:"message"`
+// 		} `json:"error"`
+// 		Result interface{} `json:"result"`
+// 	}{
+// 		Result: result,
+// 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&response)
-	if err != nil {
-		return fmt.Errorf("%s: %w", method, err)
-	}
-	if response.ID != id {
-		return fmt.Errorf("%s: json response ID mismatch", method)
-	}
-	if response.Error.Code != 0 {
-		return fmt.Errorf("%s: json response error: %s", method, response.Error.Message)
-	}
+// 	err = json.NewDecoder(resp.Body).Decode(&response)
+// 	if err != nil {
+// 		return fmt.Errorf("%s: %w", method, err)
+// 	}
+// 	if response.ID != id {
+// 		return fmt.Errorf("%s: json response ID mismatch", method)
+// 	}
+// 	if response.Error.Code != 0 {
+// 		return fmt.Errorf("%s: json response error: %s", method, response.Error.Message)
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 type CreateVolResp struct {
 	LVols []string `json:"lvols"`
@@ -479,8 +463,8 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-func (client *rpcClient) callSBCLI(method string, path string, args interface{}) (interface{}, error) {
-	var data = []byte(`{}`)
+func (client *rpcClient) callSBCLI(method, path string, args interface{}) (interface{}, error) {
+	data := []byte(`{}`)
 	var err error
 
 	if args != nil {
@@ -490,14 +474,14 @@ func (client *rpcClient) callSBCLI(method string, path string, args interface{})
 		}
 	}
 
-	requestURL := fmt.Sprintf("http://%s/%s", client.cluster_ip, path)
+	requestURL := fmt.Sprintf("http://%s/%s", client.ClusterIP, path)
 	req, err := http.NewRequest(method, requestURL, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", method, err)
 	}
 
-	// klog.V(5).Info("requestURL", requestURL, "client.cluster_ip", client.cluster_ip, "path", path)
-	authHeader := fmt.Sprintf("%s %s", client.cluster_id, client.cluster_secret)
+	// klog.V(5).Info("requestURL", requestURL, "client.ClusterIP", client.ClusterIP, "path", path)
+	authHeader := fmt.Sprintf("%s %s", client.ClusterID, client.ClusterSecret)
 	req.Header.Add("Authorization", authHeader)
 	req.Header.Set("Content-Type", "application/json")
 
