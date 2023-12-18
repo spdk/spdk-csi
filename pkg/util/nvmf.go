@@ -18,9 +18,10 @@ package util
 
 import (
 	"fmt"
-	"k8s.io/klog"
 	"net/http"
 	"time"
+
+	"k8s.io/klog"
 )
 
 type NodeNVMf struct {
@@ -33,18 +34,18 @@ type NodeNVMf struct {
 
 // func newNVMf(client *rpcClient, targetType, targetAddr string) *nodeNVMf {
 // config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret
-func NewNVMf(cluster_id, cluster_ip, cluster_secret string) *NodeNVMf {
+func NewNVMf(ClusterID, ClusterIP, ClusterSecret string) *NodeNVMf {
 	client := rpcClient{
-		cluster_id:     cluster_id,
-		cluster_ip:     cluster_ip,
-		cluster_secret: cluster_secret,
+		cluster_id:     ClusterID,
+		cluster_ip:     ClusterIP,
+		cluster_secret: ClusterSecret,
 		httpClient:     &http.Client{Timeout: cfgRPCTimeoutSeconds * time.Second},
 	}
 	return &NodeNVMf{
 		client:         &client,
-		cluster_id:     cluster_id,
-		cluster_ip:     cluster_ip,
-		cluster_secret: cluster_secret,
+		cluster_id:     ClusterID,
+		cluster_ip:     ClusterIP,
+		cluster_secret: ClusterSecret,
 	}
 }
 
@@ -67,11 +68,21 @@ func (node *NodeNVMf) VolumeInfo(lvolID string) (map[string]string, error) {
 	return lvol, nil
 }
 
+type CreateLVolData struct {
+	LvolName    string `json:"name"`
+	Size        string `json:"size"`
+	LvsName     string `json:"pool"`
+	Compression string `json:"comp"`
+	Encryption  string `json:"crypto"`
+	MaxRWIOPS   string `json:"max-rw-iops"`
+	MaxRWmBytes string `json:"max-rw-mbytes"`
+	MaxRmBytes  string `json:"max-r-mbytes"`
+	MaxWmBytes  string `json:"max-w-mbytes"`
+}
+
 // CreateVolume creates a logical volume and returns volume ID
-func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64, src_type string, src_id string,
-	qos_rw_iops string, qos_rw_mbytes string, qos_r_mbytes string, qos_w_mbytes string, compression string, encryption string) (string, error) {
-	lvolID, err := node.client.createVolume(lvolName, lvsName, sizeMiB, src_type, src_id, qos_rw_iops, qos_rw_mbytes,
-		qos_r_mbytes, qos_w_mbytes, compression, encryption)
+func (node *NodeNVMf) CreateVolume(sourceType, sourceID string, params CreateLVolData) (string, error) {
+	lvolID, err := node.client.createVolume(sourceType, sourceID, params)
 	if err != nil {
 		return "", err
 	}
@@ -80,8 +91,8 @@ func (node *NodeNVMf) CreateVolume(lvolName, lvsName string, sizeMiB int64, src_
 }
 
 // GetVolume returns the volume id of the given volume name and lvstore name. return error if not found.
-func (node *NodeNVMf) GetVolume(lvolName, pool_name string) (string, error) {
-	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", pool_name, lvolName))
+func (node *NodeNVMf) GetVolume(lvolName, poolName string) (string, error) {
+	lvol, err := node.client.getVolume(fmt.Sprintf("%s/%s", poolName, lvolName))
 	if err != nil {
 		return "", err
 	}
@@ -96,12 +107,12 @@ func (node *NodeNVMf) ResizeVolume(lvolID string, newSize int64) (bool, error) {
 	return node.client.resizeVolume(lvolID, newSize)
 }
 
-func (node *NodeNVMf) ListSnapshots() ([]map[string]string, error) {
+func (node *NodeNVMf) ListSnapshots() ([]SnapshotResp, error) {
 	return node.client.listSnapshots()
 }
 
-func (node *NodeNVMf) CreateSnapshot(lvolID, snapshotName, pool_name string) (string, error) {
-	snapshotID, err := node.client.snapshot(lvolID, snapshotName, pool_name)
+func (node *NodeNVMf) CreateSnapshot(lvolID, snapshotName, poolName string) (string, error) {
+	snapshotID, err := node.client.snapshot(lvolID, snapshotName, poolName)
 	if err != nil {
 		return "", err
 	}
@@ -129,9 +140,8 @@ func (node *NodeNVMf) DeleteSnapshot(snapshotID string) error {
 
 // PublishVolume exports a volume through NVMf target
 func (node *NodeNVMf) PublishVolume(lvolID string) error {
-	var isPublished bool
 	//err := node.client.call("nvmf_subsystem_get_listeners", &params, &result)
-	err := node.client.callSBCLI("GET", "csi/publish_volume/"+lvolID, nil, &isPublished)
+	_, err := node.client.callSBCLI("GET", "csi/publish_volume/"+lvolID, nil)
 	if err != nil {
 		return err
 	}
@@ -180,7 +190,7 @@ func (node *NodeNVMf) PublishVolume(lvolID string) error {
 func (node *NodeNVMf) isVolumePublished(lvolID string) (bool, error) {
 	var isPublished bool
 	//err := node.client.call("nvmf_subsystem_get_listeners", &params, &result)
-	err := node.client.callSBCLI("GET", "csi/is_volume_published/"+lvolID, nil, &isPublished)
+	out, err := node.client.callSBCLI("GET", "csi/is_volume_published/"+lvolID, nil)
 	if err != nil {
 		// querying nqn that does not exist, an invalid parameters error will be thrown
 		if errorMatches(err, ErrInvalidParameters) {
@@ -188,13 +198,16 @@ func (node *NodeNVMf) isVolumePublished(lvolID string) (bool, error) {
 		}
 		return false, err
 	}
+	isPublished, ok := out.(bool)
+	if !ok {
+		return false, fmt.Errorf("failed to convert the response to bool type. Interface: %v", out)
+	}
 	return isPublished, nil
 }
 
 func (node *NodeNVMf) UnpublishVolume(lvolID string) error {
-	var isPublished bool
 	//err := node.client.call("nvmf_subsystem_get_listeners", &params, &result)
-	err := node.client.callSBCLI("GET", "csi/unpublish_volume/"+lvolID, nil, &isPublished)
+	_, err := node.client.callSBCLI("GET", "csi/unpublish_volume/"+lvolID, nil)
 	if err != nil {
 		return err
 	}

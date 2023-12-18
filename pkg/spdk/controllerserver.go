@@ -63,6 +63,7 @@ func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolum
 		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
 	// copy volume info. node needs these info to contact target(ip, port, nqn, ...)
 	if csiVolume.VolumeContext == nil {
 		csiVolume.VolumeContext = volumeInfo
@@ -138,8 +139,8 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		klog.Errorf("failed to get spdk volume, volumeID: %s err: %v", volumeID, err)
 		return nil, err
 	}
-	pool_name := req.GetParameters()["pool_name"]
-	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName, pool_name)
+	poolName := req.GetParameters()["pool_name"]
+	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName, poolName)
 	if err != nil {
 		klog.Errorf("failed to create snapshot, volumeID: %s snapshotName: %s err: %v", volumeID, snapshotName, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -150,9 +151,9 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		klog.Errorf("failed to get volume info, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	size, err := strconv.ParseInt(volInfo["lvolSize"], 10, 64)
+	size, err := strconv.ParseInt(volInfo["size"], 10, 64)
 	if err != nil {
-		klog.Errorf("failed to parse volume size, lvolSize: %s err: %v", volInfo["lvolSize"], err)
+		klog.Errorf("failed to parse volume size, size: %s err: %v", volInfo["size"], err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	creationTime := timestamppb.Now()
@@ -202,7 +203,7 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		ContentSource: req.GetVolumeContentSource(),
 	}
 
-	klog.V(5).Info("provisioning node from SDK node..")
+	klog.V(5).Info("provisioning volume from SDK node..")
 	poolName := req.GetParameters()["pool_name"]
 	volumeID, err := cs.spdkNode.GetVolume(req.GetName(), poolName)
 	if err == nil {
@@ -221,14 +222,19 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		sourceType = "lvol"
 	}
 
-	qos_rw_iops := req.GetParameters()["qos_rw_iops"]
-	qos_rw_mbytes := req.GetParameters()["qos_rw_mbytes"]
-	qos_r_mbytes := req.GetParameters()["qos_r_mbytes"]
-	qos_w_mbytes := req.GetParameters()["qos_w_mbytes"]
-	compression := req.GetParameters()["compression"]
-	encryption := req.GetParameters()["encryption"]
-	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), poolName, sizeMiB, sourceType, sourceID, qos_rw_iops,
-		qos_rw_mbytes, qos_r_mbytes, qos_w_mbytes, compression, encryption)
+	createVolReq := util.CreateLVolData{
+		LvolName:    req.GetName(),
+		Size:        fmt.Sprintf("%dM", sizeMiB),
+		LvsName:     poolName,
+		MaxRWIOPS:   req.GetParameters()["qos_rw_iops"],
+		MaxRWmBytes: req.GetParameters()["qos_rw_mbytes"],
+		MaxRmBytes:  req.GetParameters()["qos_r_mbytes"],
+		MaxWmBytes:  req.GetParameters()["qos_w_mbytes"],
+		Compression: req.GetParameters()["compression"],
+		Encryption:  req.GetParameters()["encryption"],
+	}
+
+	volumeID, err = cs.spdkNode.CreateVolume(sourceType, sourceID, createVolReq)
 	if err != nil {
 		klog.Errorf("error simplyBlock volume: %v", err)
 		return nil, err
@@ -308,14 +314,13 @@ func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnap
 
 	entries, _ := cs.spdkNode.ListSnapshots()
 	var vca []*csi.ListSnapshotsResponse_Entry
-
 	for _, entry := range entries {
-		sz, _ := strconv.ParseInt(entry["size"], 10, 64)
-		dt, _ := strconv.ParseInt(entry["created_at"], 10, 64)
+		sz, _ := strconv.ParseInt(entry.Size, 10, 64)
+		dt, _ := strconv.ParseInt(entry.CreatedAt, 10, 64)
 		snapshotData := &csi.Snapshot{
 			SizeBytes:      sz,
-			SnapshotId:     fmt.Sprintf("%s:%s", entry["pool_name"], entry["uuid"]),
-			SourceVolumeId: entry["source_uuid"],
+			SnapshotId:     fmt.Sprintf("%s:%s", entry.PoolName, entry.UUID),
+			SourceVolumeId: entry.SourceUuid,
 			CreationTime: &timestamppb.Timestamp{
 				Seconds: dt,
 			},
