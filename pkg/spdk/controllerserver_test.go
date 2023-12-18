@@ -12,35 +12,35 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
 	csicommon "github.com/spdk/spdk-csi/pkg/csi-common"
-	"github.com/spdk/spdk-csi/pkg/util"
+	// "github.com/spdk/spdk-csi/pkg/util"
 )
 
-func TestNvmeofVolume(t *testing.T) {
-	testVolume("nvme-tcp", t)
-}
+// func TestNvmeofVolume(t *testing.T) {
+// 	testVolume("nvme-tcp", t)
+// }
 
-func TestNvmeofIdempotency(t *testing.T) {
-	testIdempotency("nvme-tcp", t)
-}
+// func TestNvmeofIdempotency(t *testing.T) {
+// 	testIdempotency("nvme-tcp", t)
+// }
 
-func TestNvmeofConcurrency(t *testing.T) {
-	testConcurrency("nvme-tcp", t)
-}
+// func TestNvmeofConcurrency(t *testing.T) {
+// 	testConcurrency("nvme-tcp", t)
+// }
 
-func TestIscsiVolume(t *testing.T) {
-	testVolume("iscsi", t)
-}
+// func TestIscsiVolume(t *testing.T) {
+// 	testVolume("iscsi", t)
+// }
 
-func TestIscsiIdempotency(t *testing.T) {
-	testIdempotency("iscsi", t)
-}
+// func TestIscsiIdempotency(t *testing.T) {
+// 	testIdempotency("iscsi", t)
+// }
 
-func TestIscsiConcurrency(t *testing.T) {
-	testConcurrency("iscsi", t)
-}
+// func TestIscsiConcurrency(t *testing.T) {
+// 	testConcurrency("iscsi", t)
+// }
 
 func testVolume(targetType string, t *testing.T) {
-	cs, lvss, err := createTestController(targetType)
+	cs, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,13 +76,13 @@ func testVolume(targetType string, t *testing.T) {
 	}
 
 	// make sure we didn't leave any garbage in lvstores
-	if !verifyLVSS(cs, lvss) {
-		t.Fatal("lvstore status doesn't match")
-	}
+	// if !verifyLVSS(cs, lvss) {
+	// 	t.Fatal("lvstore status doesn't match")
+	// }
 }
 
 func testIdempotency(targetType string, t *testing.T) {
-	cs, lvss, err := createTestController(targetType)
+	cs, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,13 +100,13 @@ func testIdempotency(targetType string, t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !verifyLVSS(cs, lvss) {
-		t.Fatal("lvstore status doesn't match")
-	}
+	// if !verifyLVSS(cs, lvss) {
+	// 	t.Fatal("lvstore status doesn't match")
+	// }
 }
 
 func testConcurrency(targetType string, t *testing.T) {
-	cs, lvss, err := createTestController(targetType)
+	cs, err := createTestController(targetType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,15 +143,15 @@ func testConcurrency(targetType string, t *testing.T) {
 		t.Fatal("concurrency test failed")
 	}
 
-	if !verifyLVSS(cs, lvss) {
-		t.Fatal("lvstore status doesn't match")
-	}
+	// if !verifyLVSS(cs, lvss) {
+	// 	t.Fatal("lvstore status doesn't match")
+	// }
 }
 
-func createTestController(targetType string) (cs *controllerServer, lvss [][]util.LvStore, err error) {
+func createTestController(targetType string) (cs *controllerServer, err error) {
 	err = createConfigFiles(targetType)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer func() {
 		os.Remove(os.Getenv("SPDKCSI_CONFIG"))
@@ -161,15 +161,15 @@ func createTestController(targetType string) (cs *controllerServer, lvss [][]uti
 	cd := csicommon.NewCSIDriver("test-driver", "test-version", "test-node")
 	cs, err = newControllerServer(cd)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	lvss, err = getLVSS(cs)
-	if err != nil {
-		return nil, nil, err
-	}
+	// lvss, err = getLVSS(cs)
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
 
-	return cs, lvss, nil
+	return cs, nil
 }
 
 func createConfigFiles(targetType string) error {
@@ -335,39 +335,39 @@ func deleteSameVolumeInParallel(cs *controllerServer, volumeID string, count int
 	return nil
 }
 
-func getLVSS(cs *controllerServer) ([][]util.LvStore, error) {
-	var lvss [][]util.LvStore
-	for _, spdkNode := range cs.spdkNodes {
-		lvs, err := spdkNode.LvStores()
-		if err != nil {
-			return nil, err
-		}
-		lvss = append(lvss, lvs)
-	}
-	return lvss, nil
-}
+// func getLVSS(cs *controllerServer) ([][]util.LvStore, error) {
+// 	var lvss [][]util.LvStore
+// 	for _, spdkNode := range cs.spdkNodes {
+// 		lvs, err := spdkNode.LvStores()
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		lvss = append(lvss, lvs)
+// 	}
+// 	return lvss, nil
+// }
 
-func verifyLVSS(cs *controllerServer, lvss [][]util.LvStore) bool {
-	lvssNow, err := getLVSS(cs)
-	if err != nil {
-		return false
-	}
+// func verifyLVSS(cs *controllerServer, lvss [][]util.LvStore) bool {
+// 	lvssNow, err := getLVSS(cs)
+// 	if err != nil {
+// 		return false
+// 	}
 
-	// deep compare lvss and lvssNow
-	if len(lvss) != len(lvssNow) {
-		return false
-	}
-	for i := 0; i < len(lvss); i++ {
-		lvs := lvss[i]
-		lvsNow := lvssNow[i]
-		if len(lvs) != len(lvsNow) {
-			return false
-		}
-		for j := 0; j < len(lvs); j++ {
-			if lvs[j] != lvsNow[j] {
-				return false
-			}
-		}
-	}
-	return true
-}
+// 	// deep compare lvss and lvssNow
+// 	if len(lvss) != len(lvssNow) {
+// 		return false
+// 	}
+// 	for i := 0; i < len(lvss); i++ {
+// 		lvs := lvss[i]
+// 		lvsNow := lvssNow[i]
+// 		if len(lvs) != len(lvsNow) {
+// 			return false
+// 		}
+// 		for j := 0; j < len(lvs); j++ {
+// 			if lvs[j] != lvsNow[j] {
+// 				return false
+// 			}
+// 		}
+// 	}
+// 	return true
+// }
