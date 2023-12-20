@@ -226,6 +226,7 @@ type VolumeInfoResp struct {
 	Nqn   string `json:"nqn"`
 	Model string `json:"model_id"`
 	Size  uint64 `json:"size"`
+	Hostname string `json:"hostname"`
 }
 
 // get a volume and return a BDev
@@ -250,12 +251,17 @@ func (client *rpcClient) getVolumeInfo(lvolID string) (map[string]string, error)
 	}
 
 	r := &result[0]
+	r.Hostname = strings.ReplaceAll(strings.TrimPrefix(r.Hostname, "ip-"), "-", ".")
 	return map[string]string{
 		"name":  r.Name,
 		"uuid":  r.UUID,
 		"nqn":   r.Nqn,
-		"model": r.Model,
+		"model": r.UUID,
 		"size":  fmt.Sprintf("%d", r.Size),
+		"targetAddr": r.Hostname,
+		"targetType": "tcp",
+		"targetPort": "4420",
+
 	}, nil
 }
 

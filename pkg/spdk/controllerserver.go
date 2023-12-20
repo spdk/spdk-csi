@@ -226,12 +226,12 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		LvolName:    req.GetName(),
 		Size:        fmt.Sprintf("%dM", sizeMiB),
 		LvsName:     poolName,
-		MaxRWIOPS:   req.GetParameters()["qos_rw_iops"],
-		MaxRWmBytes: req.GetParameters()["qos_rw_mbytes"],
-		MaxRmBytes:  req.GetParameters()["qos_r_mbytes"],
-		MaxWmBytes:  req.GetParameters()["qos_w_mbytes"],
-		Compression: req.GetParameters()["compression"],
-		Encryption:  req.GetParameters()["encryption"],
+		// MaxRWIOPS:   req.GetParameters()["qos_rw_iops"],
+		// MaxRWmBytes: req.GetParameters()["qos_rw_mbytes"],
+		// MaxRmBytes:  req.GetParameters()["qos_r_mbytes"],
+		// MaxWmBytes:  req.GetParameters()["qos_w_mbytes"],
+		// Compression: req.GetParameters()["compression"],
+		// Encryption:  req.GetParameters()["encryption"],
 	}
 
 	volumeID, err = cs.spdkNode.CreateVolume(&createVolReq)
@@ -241,6 +241,7 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 	}
 	vol.VolumeId = fmt.Sprintf("%s:%s", poolName, volumeID)
 	klog.V(5).Info("successfully created volume from SimplyBlock with Volume ID: ", vol.VolumeId)
+
 	return &vol, nil
 }
 
