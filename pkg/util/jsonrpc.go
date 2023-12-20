@@ -480,9 +480,16 @@ func (client *rpcClient) callSBCLI(method, path string, args interface{}) (inter
 		return nil, fmt.Errorf("%s: %w", method, err)
 	}
 
-	// klog.V(5).Info("requestURL", requestURL, "client.ClusterIP", client.ClusterIP, "path", path)
 	authHeader := fmt.Sprintf("%s %s", client.ClusterID, client.ClusterSecret)
+	// klog.V(5).Infoln("requestURL", requestURL)
+	// klog.V(5).Infoln("client.ClusterIP", client.ClusterIP)
+	// klog.V(5).Infoln("path", path)
+	// klog.V(5).Infoln("authHeader", authHeader)
+	// klog.V(5).Infoln("body", string(data))
+
 	req.Header.Add("Authorization", authHeader)
+	req.Header.Add("cluster", client.ClusterID)
+	req.Header.Add("secret", client.ClusterSecret)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.httpClient.Do(req)
@@ -506,12 +513,15 @@ func (client *rpcClient) callSBCLI(method, path string, args interface{}) (inter
 		return nil, fmt.Errorf("%s: HTTP error code: %d Error: %w", method, resp.StatusCode, err)
 	}
 
+	// klog.V(5).Info("response.Obj", response)
+
 	if response.Error.Code > 0 {
 		return nil, fmt.Errorf(response.Error.Message)
 	}
 	if response.Result != nil {
 		return response.Result, nil
 	}
+	// klog.V(5).Info("response.Results", response.Results)
 	return response.Results, nil
 }
 
