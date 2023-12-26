@@ -144,8 +144,9 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 	}
 
 	var initiator util.SpdkCsiInitiator
+	vc := req.GetVolumeContext()
+
 	if ns.xpuConnClient != nil && ns.xpuTargetType != "" {
-		vc := req.GetVolumeContext()
 		vc["stagingParentPath"] = stagingParentPath
 		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
 	} else {
