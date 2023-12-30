@@ -220,29 +220,34 @@ func (client *rpcClient) getVolume(lvolID string) (*BDev, error) {
 	return &result[0], err
 }
 
-type VolumeInfoResp struct {
-	Name  string `json:"name"`
-	UUID  string `json:"uuid"`
-	Nqn   string `json:"nqn"`
-	Model string `json:"model_id"`
-	Size  uint64 `json:"size"`
-	Hostname string `json:"hostname"`
+type LvolConnectResp struct {
+	Nqn     string `json:"nqn"`
+	Port    int    `json:"port"`
+	IP      string `json:"ip"`
+	Connect string `json:"connect"`
+}
+
+type connectionInfo struct {
+	IP   string `json:"ip"`
+	Port int    `json:"port"`
 }
 
 // get a volume and return a BDev
 func (client *rpcClient) getVolumeInfo(lvolID string) (map[string]string, error) {
-	var result []VolumeInfoResp
+	var result []LvolConnectResp
 
 	out, err := client.callSBCLI("GET",
-		fmt.Sprintf("/lvol/%s", lvolID), nil)
+		fmt.Sprintf("/lvol/connect/%s", lvolID), nil)
 	if errorMatches(err, ErrJSONNoSuchDevice) {
 		return nil, ErrJSONNoSuchDevice
 	}
 	if err != nil {
+		klog.Error(err)
 		return nil, err
 	}
 	byteData, err := json.Marshal(out)
 	if err != nil {
+		klog.Error(err)
 		return nil, err
 	}
 	err = json.Unmarshal(byteData, &result)
@@ -250,18 +255,24 @@ func (client *rpcClient) getVolumeInfo(lvolID string) (map[string]string, error)
 		return nil, err
 	}
 
-	r := &result[0]
-	r.Hostname = strings.ReplaceAll(strings.TrimPrefix(r.Hostname, "ip-"), "-", ".")
-	return map[string]string{
-		"name":  r.Name,
-		"uuid":  r.UUID,
-		"nqn":   r.Nqn,
-		"model": r.UUID,
-		"size":  fmt.Sprintf("%d", r.Size),
-		"targetAddr": r.Hostname,
-		"targetType": "tcp",
-		"targetPort": "4420",
+	var connections []connectionInfo
+	for _, r := range result {
+		connections = append(connections, connectionInfo{IP: r.IP, Port: r.Port})
+	}
 
+	connectionsData, err := json.Marshal(connections)
+	if err != nil {
+		klog.Error(err)
+		return nil, err
+	}
+
+	return map[string]string{
+		"name":        lvolID,
+		"uuid":        lvolID,
+		"nqn":         result[0].Nqn,
+		"model":       lvolID,
+		"targetType":  "tcp",
+		"connections": string(connectionsData),
 	}, nil
 }
 
