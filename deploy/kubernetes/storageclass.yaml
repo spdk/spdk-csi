@@ -9,7 +9,7 @@ metadata:
 provisioner: csi.spdk.io
 parameters:
   fsType: ext4
-  pool_name: pool1
+  pool_name: testing0
   qos_rw_iops: "0"
   qos_rw_mbytes: "0"
   qos_r_mbytes: "0"
