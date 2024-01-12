@@ -75,6 +75,17 @@ type initiatorNVMf struct {
 	model       string
 }
 
+func execWithTimeoutRetry(cmdLine []string, timeout int, retry int) (err error) {
+	for retry > 0 {
+		err = execWithTimeout(cmdLine, 40)
+		if err == nil {
+			return nil
+		}
+		retry--
+	}
+	return err
+}
+
 func (nvmf *initiatorNVMf) Connect() (string, error) {
 	// nvme connect -t tcp -a 192.168.1.100 -s 4420 -n "nqn"
 	klog.Info("connections", nvmf.connections)
@@ -83,13 +94,12 @@ func (nvmf *initiatorNVMf) Connect() (string, error) {
 			"nvme", "connect", "-t", strings.ToLower(nvmf.targetType),
 			"-a", conn.IP, "-s", strconv.Itoa(conn.Port), "-n", nvmf.nqn,
 		}
-		err := execWithTimeout(cmdLine, 40)
+		err := execWithTimeoutRetry(cmdLine, 40, len(nvmf.connections))
 		if err != nil {
 			// go on checking device status in case caused by duplicated request
 			klog.Errorf("command %v failed: %s", cmdLine, err)
+			return "", err
 		}
-		klog.Info("waiting for 15secs for previous connection to seltle")
-		time.Sleep(15 * time.Second)
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
