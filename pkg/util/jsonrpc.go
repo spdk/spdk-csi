@@ -192,9 +192,13 @@ func (client *rpcClient) createVolume(params *CreateLVolData) (string, error) {
 	var lvolID string
 	klog.V(5).Info("params", params)
 	out, err := client.callSBCLI("POST", "/lvol", &params)
-	if errorMatches(err, ErrJSONNoSpaceLeft) {
-		err = ErrJSONNoSpaceLeft // may happen in concurrency
+	if err != nil {
+		if errorMatches(err, ErrJSONNoSpaceLeft) {
+			err = ErrJSONNoSpaceLeft // may happen in concurrency
+		}
+		return "", err
 	}
+
 	lvolID, ok := out.(string)
 	if !ok {
 		return "", fmt.Errorf("failed to convert the response to string type. Interface: %v", out)
@@ -206,16 +210,16 @@ func (client *rpcClient) createVolume(params *CreateLVolData) (string, error) {
 func (client *rpcClient) getVolume(lvolID string) (*BDev, error) {
 	var result []BDev
 	out, err := client.callSBCLI("GET", fmt.Sprintf("csi/get_volume_info/%s", lvolID), nil)
+	if err != nil {
+		if errorMatches(err, ErrJSONNoSuchDevice) {
+			err = ErrJSONNoSuchDevice
+		}
+		return nil, err
+	}
 
 	result, ok := out.([]BDev)
 	if !ok {
 		return nil, fmt.Errorf("failed to convert the response to []BDev type. Interface: %v", out)
-	}
-	if errorMatches(err, ErrJSONNoSuchDevice) {
-		return nil, ErrJSONNoSuchDevice
-	}
-	if err != nil {
-		return nil, err
 	}
 	return &result[0], err
 }
@@ -238,13 +242,14 @@ func (client *rpcClient) getVolumeInfo(lvolID string) (map[string]string, error)
 
 	out, err := client.callSBCLI("GET",
 		fmt.Sprintf("/lvol/connect/%s", lvolID), nil)
-	if errorMatches(err, ErrJSONNoSuchDevice) {
-		return nil, ErrJSONNoSuchDevice
-	}
 	if err != nil {
 		klog.Error(err)
+		if errorMatches(err, ErrJSONNoSuchDevice) {
+			err = ErrJSONNoSuchDevice
+		}
 		return nil, err
 	}
+
 	byteData, err := json.Marshal(out)
 	if err != nil {
 		klog.Error(err)
