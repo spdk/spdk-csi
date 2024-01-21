@@ -1,0 +1,65 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: full-access
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["*"]
+  verbs: ["*"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: pods-list
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: full-access
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caching-node-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: caching-node-api
+  template:
+    metadata:
+      labels:
+        app: caching-node-api
+    spec:
+      hostNetwork: true
+      containers:
+      - name: c-node-api-container
+        image: hamdykhader/simplyblock:latest
+        imagePullPolicy: "Always"
+        command: ["python", "WebApp/caching_node_app_k8s.py"]
+        securityContext:
+          privileged: true
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: caching-node-service
+spec:
+  selector:
+    app: caching-node-api
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: NodePort
