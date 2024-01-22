@@ -24,9 +24,13 @@ jobs:
 
     - name: Build
       run: mkdir OUT_DIR
-  
+
     - name: Build
       run: go build -buildvcs=false -o OUT_DIR/spdkcsi ./cmd/
 
+  publish:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
     - name: Push image
       run: export OUT_DIR=OUT_DIR ; make image
