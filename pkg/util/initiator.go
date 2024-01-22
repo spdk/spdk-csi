@@ -18,10 +18,12 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,13 +45,14 @@ func NewSpdkCsiInitiator(volumeContext map[string]string) (SpdkCsiInitiator, err
 	targetType := strings.ToLower(volumeContext["targetType"])
 	switch targetType {
 	case "rdma", "tcp":
+		var connections []connectionInfo
+		json.Unmarshal([]byte(volumeContext["connections"]), &connections)
 		return &initiatorNVMf{
 			// see util/nvmf.go VolumeInfo()
-			targetType: volumeContext["targetType"],
-			targetAddr: volumeContext["targetAddr"],
-			targetPort: volumeContext["targetPort"],
-			nqn:        volumeContext["nqn"],
-			model:      volumeContext["model"],
+			targetType:  volumeContext["targetType"],
+			connections: connections,
+			nqn:         volumeContext["nqn"],
+			model:       volumeContext["model"],
 		}, nil
 	case "iscsi":
 		return &initiatorISCSI{
@@ -64,23 +67,39 @@ func NewSpdkCsiInitiator(volumeContext map[string]string) (SpdkCsiInitiator, err
 
 // NVMf initiator implementation
 type initiatorNVMf struct {
-	targetType string
-	targetAddr string
-	targetPort string
-	nqn        string
-	model      string
+	targetAddr  string
+	targetPort  string
+	targetType  string
+	connections []connectionInfo
+	nqn         string
+	model       string
+}
+
+func execWithTimeoutRetry(cmdLine []string, timeout int, retry int) (err error) {
+	for retry > 0 {
+		err = execWithTimeout(cmdLine, 40)
+		if err == nil {
+			return nil
+		}
+		retry--
+	}
+	return err
 }
 
 func (nvmf *initiatorNVMf) Connect() (string, error) {
 	// nvme connect -t tcp -a 192.168.1.100 -s 4420 -n "nqn"
-	cmdLine := []string{
-		"nvme", "connect", "-t", strings.ToLower(nvmf.targetType),
-		"-a", nvmf.targetAddr, "-s", nvmf.targetPort, "-n", nvmf.nqn,
-	}
-	err := execWithTimeout(cmdLine, 40)
-	if err != nil {
-		// go on checking device status in case caused by duplicated request
-		klog.Errorf("command %v failed: %s", cmdLine, err)
+	klog.Info("connections", nvmf.connections)
+	for _, conn := range nvmf.connections {
+		cmdLine := []string{
+			"nvme", "connect", "-t", strings.ToLower(nvmf.targetType),
+			"-a", conn.IP, "-s", strconv.Itoa(conn.Port), "-n", nvmf.nqn,
+		}
+		err := execWithTimeoutRetry(cmdLine, 40, len(nvmf.connections))
+		if err != nil {
+			// go on checking device status in case caused by duplicated request
+			klog.Errorf("command %v failed: %s", cmdLine, err)
+			return "", err
+		}
 	}
 
 	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)

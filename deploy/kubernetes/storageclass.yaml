@@ -8,7 +8,7 @@ metadata:
   name: spdkcsi-sc
 provisioner: csi.spdk.io
 parameters:
-  fsType: ext4
+  csi.storage.k8s.io/fstype: ext4
   pool_name: testing0
   qos_rw_iops: "0"
   qos_rw_mbytes: "0"
@@ -16,6 +16,8 @@ parameters:
   qos_w_mbytes: "0"
   compression: "False"
   encryption: "False"
+  distr-ndcs: "1"
+  distr-npcs: "1"
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 allowVolumeExpansion: true

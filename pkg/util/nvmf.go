@@ -78,6 +78,8 @@ type CreateLVolData struct {
 	MaxRWmBytes string `json:"max_rw_mbytes"`
 	MaxRmBytes  string `json:"max_r_mbytes"`
 	MaxWmBytes  string `json:"max_w_mbytes"`
+	DistNdcs  string `json:"distr-ndcs"`
+	DistNpcs  string `json:"distr-npcs"`
 }
 
 // CreateVolume creates a logical volume and returns volume ID
