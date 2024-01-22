@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+set -ex
+
 # This script can be used to install/delete snapshotcontroller and snapshot beta CRD
 
 SNAPSHOT_VERSION=${SNAPSHOT_VERSION:-"v3.0.3"}
@@ -82,7 +84,7 @@ function kube_version() {
 	echo "${KUBE_VERSION}" | sed 's/^v//' | cut -d'.' -f"${1}"
 }
 
-if ! get_kube_version=$(kubectl version --short) ||
+if ! get_kube_version=$(kubectl version) ||
    [[ -z "${get_kube_version}" ]]; then
 	echo "could not get Kubernetes server version"
 	echo "hint: check if you have specified the right host or port"

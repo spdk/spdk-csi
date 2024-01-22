@@ -28,7 +28,7 @@ ifeq ($(origin GOARCH), undefined)
 endif
 # csi image info (spdkcsi/spdkcsi:canary)
 ifeq ($(origin CSI_IMAGE_REGISTRY), undefined)
-  CSI_IMAGE_REGISTRY := hamdykhader
+  CSI_IMAGE_REGISTRY := simplyblock
 endif
 ifeq ($(origin CSI_IMAGE_TAG), undefined)
   CSI_IMAGE_TAG := latest

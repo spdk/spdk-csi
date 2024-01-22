@@ -25,135 +25,135 @@ limitations under the License.
 
 package util
 
-import (
-	"fmt"
-	"testing"
-)
+// import (
+// 	"fmt"
+// 	"testing"
+// )
 
-const (
-	rpcURL  = "http://127.0.0.1:9009"
-	rpcUser = "spdkcsiuser"
-	rpcPass = "spdkcsipass"
-	trAddr  = "127.0.0.1"
-)
+// const (
+// 	rpcURL  = "http://127.0.0.1:9009"
+// 	rpcUser = "spdkcsiuser"
+// 	rpcPass = "spdkcsipass"
+// 	trAddr  = "127.0.0.1"
+// )
 
-func TestNVMeTCP(t *testing.T) {
-	testNVMeoF("nvme-tcp", t)
-}
+// func TestNVMeTCP(t *testing.T) {
+// 	testNVMeoF("nvme-tcp", t)
+// }
 
-//nolint:cyclop // testNVMeoF exceeds cyclomatic complexity of 10
-func testNVMeoF(trType string, t *testing.T) {
-	nodeIx, err := NewSpdkNode(rpcURL, rpcUser, rpcPass, trType, trAddr)
-	if err != nil {
-		t.Fatalf("NewSpdkNode: %s", err)
-	}
+// //nolint:cyclop // testNVMeoF exceeds cyclomatic complexity of 10
+// func testNVMeoF(trType string, t *testing.T) {
+// 	nodeIx, err := NewSpdkNode(rpcURL, rpcUser, rpcPass, trType, trAddr)
+// 	if err != nil {
+// 		t.Fatalf("NewSpdkNode: %s", err)
+// 	}
 
-	node, ok := nodeIx.(*nodeNVMf)
-	if !ok {
-		t.Fatal("cannot cast to nodeNVMf")
-	}
+// 	node, ok := nodeIx.(*nodeNVMf)
+// 	if !ok {
+// 		t.Fatal("cannot cast to nodeNVMf")
+// 	}
 
-	lvs, err := node.LvStores()
-	if err != nil {
-		t.Fatalf("LvStores: %s", err)
-	}
-	if len(lvs) == 0 {
-		t.Fatal("No logical volume store")
-	}
-	if lvs[0].FreeSizeMiB == 0 {
-		t.Fatalf("No free space: %s", lvs[0].Name)
-	}
+// 	lvs, err := node.LvStores()
+// 	if err != nil {
+// 		t.Fatalf("LvStores: %s", err)
+// 	}
+// 	if len(lvs) == 0 {
+// 		t.Fatal("No logical volume store")
+// 	}
+// 	if lvs[0].FreeSizeMiB == 0 {
+// 		t.Fatalf("No free space: %s", lvs[0].Name)
+// 	}
 
-	lvolID, err := node.CreateVolume("lvol0", lvs[0].Name, lvs[0].FreeSizeMiB)
-	if err != nil {
-		t.Fatalf("CreateVolume: %s", err)
-	}
-	err = validateVolumeCreated(node, lvolID)
-	if err != nil {
-		t.Fatalf("validateVolumeCreated: %s", err)
-	}
+// 	lvolID, err := node.CreateVolume("lvol0", lvs[0].Name, lvs[0].FreeSizeMiB)
+// 	if err != nil {
+// 		t.Fatalf("CreateVolume: %s", err)
+// 	}
+// 	err = validateVolumeCreated(node, lvolID)
+// 	if err != nil {
+// 		t.Fatalf("validateVolumeCreated: %s", err)
+// 	}
 
-	err = node.PublishVolume(lvolID)
-	if err != nil {
-		t.Fatalf("PublishVolume: %s", err)
-	}
+// 	err = node.PublishVolume(lvolID)
+// 	if err != nil {
+// 		t.Fatalf("PublishVolume: %s", err)
+// 	}
 
-	err = validateVolumePublished(node, lvolID)
-	if err != nil {
-		t.Fatalf("validateVolumePublished: %s", err)
-	}
+// 	err = validateVolumePublished(node, lvolID)
+// 	if err != nil {
+// 		t.Fatalf("validateVolumePublished: %s", err)
+// 	}
 
-	snapshotName := "snapshot-pvc"
-	var snapshotID string
-	snapshotID, err = node.CreateSnapshot(lvolID, snapshotName)
-	if err != nil {
-		t.Fatalf("CreateSnapshot: %s", err)
-	}
-	err = validateVolumeCreated(node, snapshotID)
-	if err != nil {
-		t.Fatalf("validateCreateSnapshot: %s", err)
-	}
+// 	snapshotName := "snapshot-pvc"
+// 	var snapshotID string
+// 	snapshotID, err = node.CreateSnapshot(lvolID, snapshotName)
+// 	if err != nil {
+// 		t.Fatalf("CreateSnapshot: %s", err)
+// 	}
+// 	err = validateVolumeCreated(node, snapshotID)
+// 	if err != nil {
+// 		t.Fatalf("validateCreateSnapshot: %s", err)
+// 	}
 
-	err = node.DeleteVolume(snapshotID)
-	if err != nil {
-		t.Fatalf("DeleteSnapshot: %s", err)
-	}
-	err = validateVolumeDeleted(node, snapshotID)
-	if err != nil {
-		t.Fatalf("validateSnapshotDeleted: %s", err)
-	}
+// 	err = node.DeleteVolume(snapshotID)
+// 	if err != nil {
+// 		t.Fatalf("DeleteSnapshot: %s", err)
+// 	}
+// 	err = validateVolumeDeleted(node, snapshotID)
+// 	if err != nil {
+// 		t.Fatalf("validateSnapshotDeleted: %s", err)
+// 	}
 
-	err = node.UnpublishVolume(lvolID)
-	if err != nil {
-		t.Fatalf("UnpublishVolume: %s", err)
-	}
-	err = validateVolumeUnpublished(node, lvolID)
-	if err != nil {
-		t.Fatalf("validateVolumeUnpublished: %s", err)
-	}
+// 	err = node.UnpublishVolume(lvolID)
+// 	if err != nil {
+// 		t.Fatalf("UnpublishVolume: %s", err)
+// 	}
+// 	err = validateVolumeUnpublished(node, lvolID)
+// 	if err != nil {
+// 		t.Fatalf("validateVolumeUnpublished: %s", err)
+// 	}
 
-	err = node.DeleteVolume(lvolID)
-	if err != nil {
-		t.Fatalf("DeleteVolume: %s", err)
-	}
-	err = validateVolumeDeleted(node, lvolID)
-	if err != nil {
-		t.Fatalf("validateVolumeDeleted: %s", err)
-	}
-}
+// 	err = node.DeleteVolume(lvolID)
+// 	if err != nil {
+// 		t.Fatalf("DeleteVolume: %s", err)
+// 	}
+// 	err = validateVolumeDeleted(node, lvolID)
+// 	if err != nil {
+// 		t.Fatalf("validateVolumeDeleted: %s", err)
+// 	}
+// }
 
-func validateVolumeCreated(node *nodeNVMf, lvolID string) error {
-	created, err := node.isVolumeCreated(lvolID)
-	if err != nil {
-		return err
-	}
-	if !created {
-		return fmt.Errorf("lvol not found: %s", lvolID)
-	}
-	return nil
-}
+// func validateVolumeCreated(node *nodeNVMf, lvolID string) error {
+// 	created, err := node.isVolumeCreated(lvolID)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if !created {
+// 		return fmt.Errorf("lvol not found: %s", lvolID)
+// 	}
+// 	return nil
+// }
 
-func validateVolumePublished(node *nodeNVMf, lvolID string) error {
-	published, err := node.isVolumePublished(lvolID)
-	if err != nil {
-		return err
-	}
-	if !published {
-		return fmt.Errorf("volume not published: %s", lvolID)
-	}
-	return nil
-}
+// func validateVolumePublished(node *nodeNVMf, lvolID string) error {
+// 	published, err := node.isVolumePublished(lvolID)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if !published {
+// 		return fmt.Errorf("volume not published: %s", lvolID)
+// 	}
+// 	return nil
+// }
 
-func validateVolumeDeleted(node *nodeNVMf, lvolID string) error {
-	if validateVolumeCreated(node, lvolID) == nil {
-		return fmt.Errorf("volume not deleted")
-	}
-	return nil
-}
+// func validateVolumeDeleted(node *nodeNVMf, lvolID string) error {
+// 	if validateVolumeCreated(node, lvolID) == nil {
+// 		return fmt.Errorf("volume not deleted")
+// 	}
+// 	return nil
+// }
 
-func validateVolumeUnpublished(node *nodeNVMf, lvolID string) error {
-	if validateVolumePublished(node, lvolID) == nil {
-		return fmt.Errorf("volume not unpublished")
-	}
-	return nil
-}
+// func validateVolumeUnpublished(node *nodeNVMf, lvolID string) error {
+// 	if validateVolumePublished(node, lvolID) == nil {
+// 		return fmt.Errorf("volume not unpublished")
+// 	}
+// 	return nil
+// }

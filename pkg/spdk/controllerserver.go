@@ -33,7 +33,7 @@ import (
 	"github.com/spdk/spdk-csi/pkg/util"
 )
 
-var errVolumeInCreation = status.Error(codes.Internal, "volume in creation")
+// var errVolumeInCreation = status.Error(codes.Internal, "volume in creation")
 
 type controllerServer struct {
 	*csicommon.DefaultControllerServer
@@ -63,6 +63,7 @@ func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolum
 		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
 	// copy volume info. node needs these info to contact target(ip, port, nqn, ...)
 	if csiVolume.VolumeContext == nil {
 		csiVolume.VolumeContext = volumeInfo
@@ -138,8 +139,8 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		klog.Errorf("failed to get spdk volume, volumeID: %s err: %v", volumeID, err)
 		return nil, err
 	}
-	pool_name := req.GetParameters()["pool_name"]
-	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName, pool_name)
+	poolName := req.GetParameters()["pool_name"]
+	snapshotID, err := cs.spdkNode.CreateSnapshot(spdkVol.lvolID, snapshotName, poolName)
 	if err != nil {
 		klog.Errorf("failed to create snapshot, volumeID: %s snapshotName: %s err: %v", volumeID, snapshotName, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -150,9 +151,9 @@ func (cs *controllerServer) CreateSnapshot(_ context.Context, req *csi.CreateSna
 		klog.Errorf("failed to get volume info, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	size, err := strconv.ParseInt(volInfo["lvolSize"], 10, 64)
+	size, err := strconv.ParseInt(volInfo["size"], 10, 64)
 	if err != nil {
-		klog.Errorf("failed to parse volume size, lvolSize: %s err: %v", volInfo["lvolSize"], err)
+		klog.Errorf("failed to parse volume size, size: %s err: %v", volInfo["size"], err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	creationTime := timestamppb.Now()
@@ -202,37 +203,47 @@ func (cs *controllerServer) createVolume(req *csi.CreateVolumeRequest) (*csi.Vol
 		ContentSource: req.GetVolumeContentSource(),
 	}
 
-	pool_name := req.GetParameters()["pool_name"]
-	volumeID, err := cs.spdkNode.GetVolume(req.GetName(), pool_name)
+	klog.V(5).Info("provisioning volume from SDK node..")
+	poolName := req.GetParameters()["pool_name"]
+	volumeID, err := cs.spdkNode.GetVolume(req.GetName(), poolName)
 	if err == nil {
-		vol.VolumeId = fmt.Sprintf("%s:%s", pool_name, volumeID)
+		vol.VolumeId = fmt.Sprintf("%s:%s", poolName, volumeID)
+		klog.V(5).Info("volume already exists", vol.VolumeId)
 		return &vol, nil
 	}
 
-	var source_type, source_id string
-	vol_source := req.GetVolumeContentSource()
-	if vol_source.GetSnapshot() != nil {
-		source_id = vol_source.GetSnapshot().GetSnapshotId()
-		source_type = "snapshot"
+	// var sourceType, sourceID string
+	// volSource := req.GetVolumeContentSource()
+	// if volSource.GetSnapshot() != nil {
+	// 	sourceID = volSource.GetSnapshot().GetSnapshotId()
+	// 	sourceType = "snapshot"
+	// } else if volSource.GetVolume() != nil {
+	// 	sourceID = volSource.GetVolume().GetVolumeId()
+	// 	sourceType = "lvol"
+	// }
 
-	} else if vol_source.GetVolume() != nil {
-		source_id = vol_source.GetVolume().GetVolumeId()
-		source_type = "lvol"
-
+	createVolReq := util.CreateLVolData{
+		LvolName:    req.GetName(),
+		Size:        fmt.Sprintf("%dM", sizeMiB),
+		LvsName:     poolName,
+		MaxRWIOPS:   req.GetParameters()["qos_rw_iops"],
+		MaxRWmBytes: req.GetParameters()["qos_rw_mbytes"],
+		MaxRmBytes:  req.GetParameters()["qos_r_mbytes"],
+		MaxWmBytes:  req.GetParameters()["qos_w_mbytes"],
+		Compression: req.GetParameters()["compression"],
+		Encryption:  req.GetParameters()["encryption"],
+		DistNdcs:    req.GetParameters()["distr-ndcs"],
+		DistNpcs:    req.GetParameters()["distr-npcs"],
 	}
 
-	qos_rw_iops := req.GetParameters()["qos_rw_iops"]
-	qos_rw_mbytes := req.GetParameters()["qos_rw_mbytes"]
-	qos_r_mbytes := req.GetParameters()["qos_r_mbytes"]
-	qos_w_mbytes := req.GetParameters()["qos_w_mbytes"]
-	compression := req.GetParameters()["compression"]
-	encryption := req.GetParameters()["encryption"]
-	volumeID, err = cs.spdkNode.CreateVolume(req.GetName(), pool_name, sizeMiB, source_type, source_id, qos_rw_iops,
-		qos_rw_mbytes, qos_r_mbytes, qos_w_mbytes, compression, encryption)
+	volumeID, err = cs.spdkNode.CreateVolume(&createVolReq)
 	if err != nil {
+		klog.Errorf("error simplyBlock volume: %v", err)
 		return nil, err
 	}
-	vol.VolumeId = fmt.Sprintf("%s:%s", pool_name, volumeID)
+	vol.VolumeId = fmt.Sprintf("%s:%s", poolName, volumeID)
+	klog.V(5).Info("successfully created volume from SimplyBlock with Volume ID: ", vol.VolumeId)
+
 	return &vol, nil
 }
 
@@ -286,10 +297,13 @@ func (cs *controllerServer) unpublishVolume(volumeID string) error {
 	return cs.spdkNode.UnpublishVolume(spdkVol.lvolID)
 }
 
-func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+func (cs *controllerServer) ControllerExpandVolume(_ context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
 	updatedSize := req.GetCapacityRange().GetRequiredBytes()
 	spdkVol, err := getSPDKVol(volumeID)
+	if err != nil {
+		return nil, err
+	}
 	_, err = cs.spdkNode.ResizeVolume(spdkVol.lvolID, updatedSize)
 
 	if err != nil {
@@ -302,18 +316,25 @@ func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi
 	}, nil
 }
 
-func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
-
-	entries, _ := cs.spdkNode.ListSnapshots()
+func (cs *controllerServer) ListSnapshots(_ context.Context, _ *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+	entries, err := cs.spdkNode.ListSnapshots()
+	if err != nil {
+		return nil, err
+	}
 	var vca []*csi.ListSnapshotsResponse_Entry
-
 	for _, entry := range entries {
-		sz, _ := strconv.ParseInt(entry["size"], 10, 64)
-		dt, _ := strconv.ParseInt(entry["created_at"], 10, 64)
+		sz, err := strconv.ParseInt(entry.Size, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		dt, err := strconv.ParseInt(entry.CreatedAt, 10, 64)
+		if err != nil {
+			return nil, err
+		}
 		snapshotData := &csi.Snapshot{
 			SizeBytes:      sz,
-			SnapshotId:     fmt.Sprintf("%s:%s", entry["pool_name"], entry["uuid"]),
-			SourceVolumeId: entry["source_uuid"],
+			SnapshotId:     fmt.Sprintf("%s:%s", entry.PoolName, entry.UUID),
+			SourceVolumeId: entry.SourceUUID,
 			CreationTime: &timestamppb.Timestamp{
 				Seconds: dt,
 			},
@@ -339,11 +360,10 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	}
 
 	// get spdk node configs, see deploy/kubernetes/config-map.yaml
-	//nolint:tagliatelle // not using json:snake case
 	var config struct {
 		Simplybk struct {
-			Uuid string `json:"uuid"`
-			Ip   string `json:"ip"`
+			UUID string `json:"uuid"`
+			IP   string `json:"ip"`
 		} `json:"simplybk"`
 	}
 	configFile := util.FromEnv("SPDKCSI_CONFIG", "/etc/spdkcsi-config/config.json")
@@ -363,54 +383,54 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 		return nil, err
 	}
 
-	spdkNode := util.NewNVMf(config.Simplybk.Uuid, config.Simplybk.Ip, secret.Simplybk.Secret)
+	spdkNode := util.NewNVMf(config.Simplybk.UUID, config.Simplybk.IP, secret.Simplybk.Secret)
 	if spdkNode == nil {
-		klog.Errorf("failed to create spdk node %s: %s", config.Simplybk.Uuid, err.Error())
+		klog.Errorf("failed to create spdk node %s: %s", config.Simplybk.UUID, err.Error())
 		return nil, fmt.Errorf("no valid spdk node found")
-	} else {
-		klog.Infof("spdk node created: name=%s, url=%s", config.Simplybk.Uuid, config.Simplybk.Ip)
-		server.spdkNode = spdkNode
-		return &server, nil
 	}
 
+	klog.Infof("spdk node created: name=%s, url=%s", config.Simplybk.UUID, config.Simplybk.IP)
+	server.spdkNode = spdkNode
+	return &server, nil
+
 	// create spdk nodes
-	//for i := range config.Nodes {
-	//	node := &config.Nodes[i]
-	//	tokenFound := false
-	//	// find secret per node
-	//	for j := range secret.Tokens {
-	//		token := &secret.Tokens[j]
-	//		if token.Name == node.Name {
-	//			tokenFound = true
-	//			spdkNode, err := util.NewSpdkNode(node.URL, token.UserName, token.Password, node.TargetType, node.TargetAddr)
-	//			if err != nil {
-	//				klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
-	//			} else {
-	//				klog.Infof("spdk node created: name=%s, url=%s", node.Name, node.URL)
-	//				server.spdkNodes[node.Name] = spdkNode
-	//			}
-	//			break
-	//		}
-	//	}
-	//	if !tokenFound {
-	//		klog.Errorf("failed to find secret for spdk node %s", node.Name)
-	//	}
-	//}
-	//if len(server.spdkNodes) == 0 {
-	//	return nil, fmt.Errorf("no valid spdk node found")
-	//}
-	//
-	//return &server, nil
+	// for i := range config.Nodes {
+	// 	node := &config.Nodes[i]
+	// 	tokenFound := false
+	// 	// find secret per node
+	// 	for j := range secret.Tokens {
+	// 		token := &secret.Tokens[j]
+	// 		if token.Name == node.Name {
+	// 			tokenFound = true
+	// 			spdkNode, err := util.NewSpdkNode(node.URL, token.UserName, token.Password, node.TargetType, node.TargetAddr)
+	// 			if err != nil {
+	// 				klog.Errorf("failed to create spdk node %s: %s", node.Name, err.Error())
+	// 			} else {
+	// 				klog.Infof("spdk node created: name=%s, url=%s", node.Name, node.URL)
+	// 				server.spdkNodes[node.Name] = spdkNode
+	// 			}
+	// 			break
+	// 		}
+	// 	}
+	// 	if !tokenFound {
+	// 		klog.Errorf("failed to find secret for spdk node %s", node.Name)
+	// 	}
+	// }
+	// if len(server.spdkNodes) == 0 {
+	// 	return nil, fmt.Errorf("no valid spdk node found")
+	// }
+
+	// return &server, nil
 }
 
-//func (cs *controllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-//	return nil, status.Error(codes.Unimplemented, "")
-//}
-//
-//func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-//	return nil, status.Error(codes.Unimplemented, "")
-//}
-//
-//func (cs *controllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-//	return nil, status.Error(codes.Unimplemented, "")
-//}
+// func (cs *controllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+// 	return nil, status.Error(codes.Unimplemented, "")
+// }
+
+// func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+// 	return nil, status.Error(codes.Unimplemented, "")
+// }
+
+// func (cs *controllerServer) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+// 	return nil, status.Error(codes.Unimplemented, "")
+// }

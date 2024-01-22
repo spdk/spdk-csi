@@ -8,7 +8,7 @@
 #   2.x =< snapshot-controller < v4.x
 # We recommend to use {sidecar, controller, crds} of same version
 ---
-apiVersion: snapshot.storage.k8s.io/v1beta1
+apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
 metadata:
   name: csi-spdk-snapclass
