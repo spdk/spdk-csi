@@ -38,7 +38,7 @@ spec:
           capabilities:
             add: ["SYS_ADMIN", "SYS_MODULE"]
           allowPrivilegeEscalation: true
-        image: manoharbrm/spdkcsi:latest
+        image: simplyblock/spdkcsi:latest
         imagePullPolicy: "Always"
         args:
         - "--v=5"

@@ -67,7 +67,7 @@ spec:
             mountPath: /csi
 
       - name: spdkcsi-controller
-        image: manoharbrm/spdkcsi:latest
+        image: simplyblock/spdkcsi:latest
         imagePullPolicy: "Always"
         args:
         - "--v=5"
