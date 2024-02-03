@@ -44,6 +44,7 @@ type nodeServer struct {
 	xpuConnClient *grpc.ClientConn
 	xpuTargetType string
 	kvmPciBridges int
+	spdkNode      *util.NodeNVMf
 }
 
 func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
@@ -122,6 +123,11 @@ func newNodeServer(d *csicommon.CSIDriver) (*nodeServer, error) {
 	ns.xpuConnClient = xpuConnClient
 	ns.xpuTargetType = xpuTargetType
 
+	ns.spdkNode, err = NewsimplyBlockClient()
+	if err != nil {
+		klog.Error("failed to create simplyblock client", err)
+		return nil, err
+	}
 	return ns, nil
 }
 
@@ -154,7 +160,7 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 	// }
 
 	vc["stagingParentPath"] = stagingParentPath
-	initiator, err = util.NewSpdkCsiInitiator(vc)
+	initiator, err = util.NewSpdkCsiInitiator(vc, ns.spdkNode)
 	if err != nil {
 		klog.Errorf("failed to create spdk initiator, volumeID: %s err: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -219,7 +225,7 @@ func (ns *nodeServer) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageV
 		vc["stagingParentPath"] = stagingParentPath
 		initiator, err = util.NewSpdkCsiXpuInitiator(vc, ns.xpuConnClient, ns.xpuTargetType, ns.kvmPciBridges)
 	} else {
-		initiator, err = util.NewSpdkCsiInitiator(volumeContext)
+		initiator, err = util.NewSpdkCsiInitiator(volumeContext, ns.spdkNode)
 	}
 	if err != nil {
 		klog.Errorf("failed to create spdk initiator, volumeID: %s err: %v", volumeID, err)

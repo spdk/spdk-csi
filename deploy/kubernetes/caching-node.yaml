@@ -27,19 +27,22 @@ roleRef:
 
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: caching-node-deployment
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: caching-node-api
+      app: caching-node
   template:
     metadata:
       labels:
-        app: caching-node-api
+        app: caching-node
     spec:
+      volumes:
+        - name: dev-vol
+          hostPath:
+            path: /dev
       hostNetwork: true
       containers:
       - name: c-node-api-container
@@ -48,18 +51,6 @@ spec:
         command: ["python", "WebApp/caching_node_app_k8s.py"]
         securityContext:
           privileged: true
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: caching-node-service
-spec:
-  selector:
-    app: caching-node-api
-  ports:
-    - protocol: TCP
-      port: 5000
-      targetPort: 5000
-  type: NodePort
+        volumeMounts:
+        - name: dev-vol
+          mountPath: /dev

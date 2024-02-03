@@ -41,6 +41,7 @@ const (
 	TransportTypeNvmfTCP   = "nvmftcp"
 	TransportTypeNvme      = "nvme"
 	TransportTypeVirtioBlk = "virtioblk"
+	TargetTypeCache        = "cache"
 )
 
 type XpuInitiator interface {

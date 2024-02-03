@@ -43,6 +43,8 @@ func (ns *DefaultNodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetIn
 
 	return &csi.NodeGetInfoResponse{
 		NodeId: ns.Driver.nodeID,
+		AccessibleTopology: &csi.Topology{
+		},
 	}, nil
 }
 

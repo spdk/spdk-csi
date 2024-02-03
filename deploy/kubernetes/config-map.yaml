@@ -10,7 +10,7 @@ data:
   config.json: |-
     {
       "simplybk": {
-        "uuid": "b2220b8a-dd09-4c2e-8163-3f85d7c12736",
-        "ip": "10.0.1.207"
+        "uuid": "1a215589-e08f-47aa-bafb-3ee68d719e35",
+        "ip": "3.140.238.66"
       }
     }

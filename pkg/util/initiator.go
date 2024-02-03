@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -41,7 +42,9 @@ type SpdkCsiInitiator interface {
 	Disconnect() error
 }
 
-func NewSpdkCsiInitiator(volumeContext map[string]string) (SpdkCsiInitiator, error) {
+const DEV_DISK_BY_ID = "/dev/disk/by-id/*%s*"
+
+func NewSpdkCsiInitiator(volumeContext map[string]string, spdkNode *NodeNVMf) (SpdkCsiInitiator, error) {
 	targetType := strings.ToLower(volumeContext["targetType"])
 	switch targetType {
 	case "rdma", "tcp":
@@ -60,6 +63,12 @@ func NewSpdkCsiInitiator(volumeContext map[string]string) (SpdkCsiInitiator, err
 			targetPort: volumeContext["targetPort"],
 			iqn:        volumeContext["iqn"],
 		}, nil
+	case "cache":
+		return &initiatorCache{
+			lvol:   volumeContext["lvol"],
+			model:  volumeContext["model"],
+			client: *spdkNode.client,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown initiator: %s", targetType)
 	}
@@ -73,6 +82,113 @@ type initiatorNVMf struct {
 	connections []connectionInfo
 	nqn         string
 	model       string
+}
+
+type initiatorCache struct {
+	lvol   string
+	model  string
+	client rpcClient
+}
+
+type cachingNodeList struct {
+	Hostname string `json:"hostname"`
+	UUID     string `json:"id"`
+}
+
+type LVolCachingNodeConnect struct {
+	LvolID string `json:"lvol_id"`
+}
+
+func (cache *initiatorCache) Connect() (string, error) {
+	// get the hostname
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	out, err := cache.client.callSBCLI("GET", fmt.Sprintf("/cachingnode"), nil)
+	if err != nil {
+		klog.Error(err)
+		return "", err
+	}
+
+	cnodes, ok := out.([]cachingNodeList)
+	if !ok {
+		return "", fmt.Errorf("failed to convert the response to CSIPoolsResp type. Interface: %v", out)
+	}
+
+	isCachingNodeConnected := false
+	for _, cnode := range cnodes {
+		if hostname == cnode.Hostname {
+			req := LVolCachingNodeConnect{
+				LvolID: cache.lvol,
+			}
+			_, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/connect/%s", cnode.UUID), req)
+			if err != nil {
+				klog.Error(err)
+				return "", err
+			}
+			isCachingNodeConnected = true
+		}
+	}
+
+	if !isCachingNodeConnected {
+		return "", fmt.Errorf("failed to find the caching node")
+	}
+
+	// get the caching node ID associated with the hostname
+	// connect lvol and caching node
+
+	deviceGlob := fmt.Sprintf(DEV_DISK_BY_ID, cache.model)
+	devicePath, err := waitForDeviceReady(deviceGlob, 20)
+	if err != nil {
+		return "", err
+	}
+	return devicePath, nil
+}
+
+func (cache *initiatorCache) Disconnect() error {
+	// get the hostname
+	// get the caching node ID associated with the hostname
+	// connect lvol and caching node
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	out, err := cache.client.callSBCLI("GET", fmt.Sprintf("/cachingnode"), nil)
+	if err != nil {
+		klog.Error(err)
+		return err
+	}
+
+	cnodes, ok := out.([]cachingNodeList)
+	if !ok {
+		return fmt.Errorf("failed to convert the response to CSIPoolsResp type. Interface: %v", out)
+	}
+
+	isCachingNodeConnected := false
+	for _, cnode := range cnodes {
+		if hostname == cnode.Hostname {
+
+			_, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/disconnect/%s", cnode.UUID), nil)
+			if err != nil {
+				klog.Error(err)
+				return err
+			}
+			isCachingNodeConnected = true
+		}
+	}
+
+	if !isCachingNodeConnected {
+		return fmt.Errorf("failed to find the caching node")
+	}
+
+	deviceGlob := fmt.Sprintf(DEV_DISK_BY_ID, cache.model)
+	return waitForDeviceGone(deviceGlob)
 }
 
 func execWithTimeoutRetry(cmdLine []string, timeout int, retry int) (err error) {
@@ -102,7 +218,7 @@ func (nvmf *initiatorNVMf) Connect() (string, error) {
 		}
 	}
 
-	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
+	deviceGlob := fmt.Sprintf(DEV_DISK_BY_ID, nvmf.model)
 	devicePath, err := waitForDeviceReady(deviceGlob, 20)
 	if err != nil {
 		return "", err
@@ -119,7 +235,7 @@ func (nvmf *initiatorNVMf) Disconnect() error {
 		klog.Errorf("command %v failed: %s", cmdLine, err)
 	}
 
-	deviceGlob := fmt.Sprintf("/dev/disk/by-id/*%s*", nvmf.model)
+	deviceGlob := fmt.Sprintf(DEV_DISK_BY_ID, nvmf.model)
 	return waitForDeviceGone(deviceGlob)
 }
 

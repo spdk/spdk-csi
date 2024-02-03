@@ -73,6 +73,10 @@ func (cs *controllerServer) CreateVolume(_ context.Context, req *csi.CreateVolum
 		}
 	}
 
+	if volType, ok := req.GetParameters()["type"]; ok && volType == "cache" {
+		csiVolume.VolumeContext["targetType"] = "cache"
+	}
+
 	return &csi.CreateVolumeResponse{Volume: csiVolume}, nil
 }
 
@@ -353,12 +357,7 @@ func (cs *controllerServer) ListSnapshots(_ context.Context, _ *csi.ListSnapshot
 	}, nil
 }
 
-func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
-	server := controllerServer{
-		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
-		volumeLocks:             util.NewVolumeLocks(),
-	}
-
+func NewsimplyBlockClient() (*util.NodeNVMf, error) {
 	// get spdk node configs, see deploy/kubernetes/config-map.yaml
 	var config struct {
 		Simplybk struct {
@@ -382,14 +381,23 @@ func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	klog.Infof("spdk node created: name=%s, url=%s", config.Simplybk.IP)
 
-	spdkNode := util.NewNVMf(config.Simplybk.UUID, config.Simplybk.IP, secret.Simplybk.Secret)
-	if spdkNode == nil {
-		klog.Errorf("failed to create spdk node %s: %s", config.Simplybk.UUID, err.Error())
+	return util.NewNVMf(config.Simplybk.UUID, config.Simplybk.IP, secret.Simplybk.Secret), nil
+}
+
+func newControllerServer(d *csicommon.CSIDriver) (*controllerServer, error) {
+	server := controllerServer{
+		DefaultControllerServer: csicommon.NewDefaultControllerServer(d),
+		volumeLocks:             util.NewVolumeLocks(),
+	}
+
+	spdkNode, err := NewsimplyBlockClient()
+	if err != nil {
+		klog.Errorf("failed to create spdk node %s: %s", err.Error())
 		return nil, fmt.Errorf("no valid spdk node found")
 	}
 
-	klog.Infof("spdk node created: name=%s, url=%s", config.Simplybk.UUID, config.Simplybk.IP)
 	server.spdkNode = spdkNode
 	return &server, nil
 
