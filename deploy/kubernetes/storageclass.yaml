@@ -10,6 +10,7 @@ provisioner: csi.spdk.io
 parameters:
   csi.storage.k8s.io/fstype: ext4
   pool_name: testing1
+  type: cache
   qos_rw_iops: "0"
   qos_rw_mbytes: "0"
   qos_r_mbytes: "0"

@@ -38,7 +38,7 @@ spec:
           capabilities:
             add: ["SYS_ADMIN", "SYS_MODULE"]
           allowPrivilegeEscalation: true
-        image: simplyblock/spdkcsi:latest
+        image: manoharbrm/spdkcsi:latest
         imagePullPolicy: "Always"
         args:
         - "--v=5"
@@ -70,6 +70,12 @@ spec:
         - name: spdkcsi-nodeserver-config
           mountPath: /etc/spdkcsi-nodeserver-config/
           readOnly: true
+        - name: spdkcsi-config
+          mountPath: /etc/spdkcsi-config/
+          readOnly: true
+        - name: spdkcsi-secret
+          mountPath: /etc/spdkcsi-secret/
+          readOnly: true
       volumes:
       - name: socket-dir
         hostPath:
@@ -97,3 +103,10 @@ spec:
         configMap:
           name: spdkcsi-nodeservercm
           optional: true
+      - name: spdkcsi-config
+        configMap:
+          name: spdkcsi-cm
+      - name: spdkcsi-secret
+        secret:
+          secretName: spdkcsi-secret
+

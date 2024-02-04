@@ -29,7 +29,7 @@ roleRef:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: caching-node-deployment
+  name: caching-node-ds
 spec:
   selector:
     matchLabels:
@@ -39,6 +39,8 @@ spec:
       labels:
         app: caching-node
     spec:
+      nodeSelector:
+        type: cache
       volumes:
         - name: dev-vol
           hostPath:

@@ -16,34 +16,26 @@ else
 	done
 fi
 
+# CLUSTER_ID='0afa8f0c-03c2-4223-800c-a4d5b39f0010'
+# MGMT_IP='3.144.225.78'
+# CLUSTER_SECRET=vbpuEOtrs12s85JtBRQH
+
 # echo "Deploying Caching node..."
-
-# echo "adding all the k8s nodes tainted with simplyblock:cache as caching nodes"
-# kubectl apply -f caching-nodes.yaml
-
+# kubectl apply -f caching-node.yaml
 # kubectl wait --for=condition=ready pod -l app=caching-node
 
-# service="caching-node-service"
-# node_port=$(kubectl get services $service -o=jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+# # echo "$service is running on port $node_port"
 
-# echo "$service is running on port $node_port"
+# for node in $(kubectl get pods -owide | awk 'NR>1 {print $6}'); do
+# 	echo "adding caching node: $node"
 
-# curl --location 'http://3.140.238.66/cachingnode/' \
-# 	--header 'Content-Type: application/json' \
-# 	--header 'Authorization: 1a215589-e08f-47aa-bafb-3ee68d719e35 OdXPGPY2ITUrdAK6xVcv' \
-# 	--data '{
-#     "cluster_id": "1a215589-e08f-47aa-bafb-3ee68d719e35",
-#     "node_ip": "10.0.4.13:31484",
-#     "iface_name": "eth0"
-# }
-# '
-
-# ## preparing nodes
-# sudo echo "vm.nr_hugepages=2048" >> /etc/sysctl.conf
-# sudo sysctl -p
-
-# mount -t hugetlbfs -o size=2g nodev /mnt/huge
-
-# logic on the node side
-# 1. get the caching node UUID
-# 2. deploy the caching node
+# 	curl --location "http://${MGMT_IP}/cachingnode/" \
+# 		--header "Content-Type: application/json" \
+# 		--header "Authorization: ${CLUSTER_ID} ${CLUSTER_SECRET}" \
+# 		--data '{
+# 		"cluster_id": "'"${CLUSTER_ID}"'",
+# 		"node_ip": "'"${node}:5000"'",
+# 		"iface_name": "eth0"
+# 	}
+# 	'
+# done

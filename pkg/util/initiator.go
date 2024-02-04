@@ -106,6 +106,8 @@ func (cache *initiatorCache) Connect() (string, error) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	hostname = strings.Split(hostname, ".")[0]
+	klog.Info("hostname: ", hostname)
 
 	out, err := cache.client.callSBCLI("GET", fmt.Sprintf("/cachingnode"), nil)
 	if err != nil {
@@ -113,10 +115,17 @@ func (cache *initiatorCache) Connect() (string, error) {
 		return "", err
 	}
 
-	cnodes, ok := out.([]cachingNodeList)
-	if !ok {
-		return "", fmt.Errorf("failed to convert the response to CSIPoolsResp type. Interface: %v", out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return "", err
 	}
+	var cnodes []cachingNodeList
+	err = json.Unmarshal(data, &cnodes)
+	if err != nil {
+		return "", err
+	}
+
+	klog.Info("found caching nodes: ", cnodes)
 
 	isCachingNodeConnected := false
 	for _, cnode := range cnodes {
@@ -124,11 +133,13 @@ func (cache *initiatorCache) Connect() (string, error) {
 			req := LVolCachingNodeConnect{
 				LvolID: cache.lvol,
 			}
-			_, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/connect/%s", cnode.UUID), req)
+			klog.Info("connecting caching node: ", cnode.Hostname, "with lvol: ", cache.lvol)
+			resp, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/connect/%s", cnode.UUID), req)
 			if err != nil {
-				klog.Error(err)
+				klog.Error("caching node connect error:", err)
 				return "", err
 			}
+			klog.Info("caching node connect resp: ", resp)
 			isCachingNodeConnected = true
 		}
 	}
@@ -158,6 +169,8 @@ func (cache *initiatorCache) Disconnect() error {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	hostname = strings.Split(hostname, ".")[0]
+	klog.Info("hostname: ", hostname)
 
 	out, err := cache.client.callSBCLI("GET", fmt.Sprintf("/cachingnode"), nil)
 	if err != nil {
@@ -165,20 +178,30 @@ func (cache *initiatorCache) Disconnect() error {
 		return err
 	}
 
-	cnodes, ok := out.([]cachingNodeList)
-	if !ok {
-		return fmt.Errorf("failed to convert the response to CSIPoolsResp type. Interface: %v", out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return err
 	}
+	var cnodes []cachingNodeList
+	err = json.Unmarshal(data, &cnodes)
+	if err != nil {
+		return err
+	}
+	klog.Info("found caching nodes: ", cnodes)
 
 	isCachingNodeConnected := false
 	for _, cnode := range cnodes {
 		if hostname == cnode.Hostname {
-
-			_, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/disconnect/%s", cnode.UUID), nil)
+			klog.Info("disconnect caching node: ", cnode.Hostname, "with lvol: ", cache.lvol)
+			req := LVolCachingNodeConnect{
+				LvolID: cache.lvol,
+			}
+			resp, err := cache.client.callSBCLI("PUT", fmt.Sprintf("/cachingnode/disconnect/%s", cnode.UUID), req)
 			if err != nil {
-				klog.Error(err)
+				klog.Error("caching node disconnect error:", err)
 				return err
 			}
+			klog.Info("caching node disconnect resp: ", resp)
 			isCachingNodeConnected = true
 		}
 	}
