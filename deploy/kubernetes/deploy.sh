@@ -16,26 +16,24 @@ else
 	done
 fi
 
-# CLUSTER_ID='0afa8f0c-03c2-4223-800c-a4d5b39f0010'
-# MGMT_IP='3.144.225.78'
-# CLUSTER_SECRET=vbpuEOtrs12s85JtBRQH
+CLUSTER_ID='0afa8f0c-03c2-4223-800c-a4d5b39f0010'
+MGMT_IP='3.144.225.78'
+CLUSTER_SECRET=vbpuEOtrs12s85JtBRQH
 
-# echo "Deploying Caching node..."
-# kubectl apply -f caching-node.yaml
-# kubectl wait --for=condition=ready pod -l app=caching-node
+echo "Deploying Caching node..."
+kubectl apply -f caching-node.yaml
+kubectl wait --for=condition=ready pod -l app=caching-node
 
-# # echo "$service is running on port $node_port"
+for node in $(kubectl get pods -owide | awk 'NR>1 {print $6}'); do
+	echo "adding caching node: $node"
 
-# for node in $(kubectl get pods -owide | awk 'NR>1 {print $6}'); do
-# 	echo "adding caching node: $node"
-
-# 	curl --location "http://${MGMT_IP}/cachingnode/" \
-# 		--header "Content-Type: application/json" \
-# 		--header "Authorization: ${CLUSTER_ID} ${CLUSTER_SECRET}" \
-# 		--data '{
-# 		"cluster_id": "'"${CLUSTER_ID}"'",
-# 		"node_ip": "'"${node}:5000"'",
-# 		"iface_name": "eth0"
-# 	}
-# 	'
-# done
+	curl --location "http://${MGMT_IP}/cachingnode/" \
+		--header "Content-Type: application/json" \
+		--header "Authorization: ${CLUSTER_ID} ${CLUSTER_SECRET}" \
+		--data '{
+		"cluster_id": "'"${CLUSTER_ID}"'",
+		"node_ip": "'"${node}:5000"'",
+		"iface_name": "eth0"
+	}
+	'
+done

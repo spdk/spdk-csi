@@ -21,7 +21,7 @@ spec:
       hostNetwork: true
       containers:
       - name: spdkcsi-provisioner
-        image: k8s.gcr.io/sig-storage/csi-provisioner:v2.0.2
+        image: registry.k8s.io/sig-storage/csi-provisioner:v3.5.0
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"
@@ -29,11 +29,12 @@ spec:
         - "--timeout=30s"
         - "--retry-interval-start=500ms"
         - "--leader-election=false"
+        - "--feature-gates=Topology=true"
         volumeMounts:
         - name: socket-dir
           mountPath: /csi
       - name: spdkcsi-snapshotter
-        image: k8s.gcr.io/sig-storage/csi-snapshotter:v3.0.3
+        image: registry.k8s.io/sig-storage/csi-snapshotter:v6.2.2
         args:
         - "--csi-address=unix:///csi/csi-provisioner.sock"
         - "--v=5"
@@ -46,7 +47,7 @@ spec:
         - name: socket-dir
           mountPath: /csi
       - name: spdkcsi-attacher
-        image: k8s.gcr.io/sig-storage/csi-attacher:v3.0.0
+        image: gcr.io/k8s-staging-sig-storage/csi-attacher:v3.5.0
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"
@@ -56,7 +57,7 @@ spec:
         - name: socket-dir
           mountPath: /csi
       - name: spdkcsi-resizer
-        image: k8s.gcr.io/sig-storage/csi-resizer:v1.7.0
+        image: gcr.io/k8s-staging-sig-storage/csi-resizer:v1.10.0
         imagePullPolicy: "IfNotPresent"
         args:
           - "--v=5"
