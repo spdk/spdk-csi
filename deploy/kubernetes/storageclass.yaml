@@ -10,6 +10,27 @@ provisioner: csi.spdk.io
 parameters:
   csi.storage.k8s.io/fstype: ext4
   pool_name: testing1
+  qos_rw_iops: "0"
+  qos_rw_mbytes: "0"
+  qos_r_mbytes: "0"
+  qos_w_mbytes: "0"
+  compression: "False"
+  encryption: "False"
+  distr-ndcs: "1"
+  distr-npcs: "1"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: spdkcsi-sc-cache
+provisioner: csi.spdk.io
+parameters:
+  csi.storage.k8s.io/fstype: ext4
+  pool_name: testing1
   type: cache
   qos_rw_iops: "0"
   qos_rw_mbytes: "0"

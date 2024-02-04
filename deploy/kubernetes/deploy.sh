@@ -24,7 +24,7 @@ echo "Deploying Caching node..."
 kubectl apply -f caching-node.yaml
 kubectl wait --for=condition=ready pod -l app=caching-node
 
-for node in $(kubectl get pods -owide | awk 'NR>1 {print $6}'); do
+for node in $(kubectl get pods -l app=caching-node -owide | awk 'NR>1 {print $6}'); do
 	echo "adding caching node: $node"
 
 	curl --location "http://${MGMT_IP}/cachingnode/" \
