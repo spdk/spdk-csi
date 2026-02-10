@@ -183,7 +183,7 @@ func (client *rpcClient) lvStores() ([]LvStore, error) {
 func (client *rpcClient) createVolume(lvolName, lvsName string, sizeMiB int64) (string, error) {
 	params := struct {
 		LvolName      string `json:"lvol_name"`
-		Size          int64  `json:"size"`
+		Size          int64  `json:"size_in_mib"`
 		LvsName       string `json:"lvs_name"`
 		ClearMethod   string `json:"clear_method"`
 		ThinProvision bool   `json:"thin_provision"`

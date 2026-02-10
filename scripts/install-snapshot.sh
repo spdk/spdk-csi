@@ -78,27 +78,31 @@ function delete_snapshot_crd() {
 # parse the kubernetes version
 # v1.17.2 -> kube_version 1 -> 1  (Major)
 # v1.17.2 -> kube_version 2 -> 17 (Minor)
+# Function to parse the Kubernetes version
 function kube_version() {
-	echo "${KUBE_VERSION}" | sed 's/^v//' | cut -d'.' -f"${1}"
+        echo "${KUBE_MAJOR}.${KUBE_MINOR}"
 }
 
-if ! get_kube_version=$(kubectl version --short) ||
-   [[ -z "${get_kube_version}" ]]; then
+# Attempt to retrieve Kubernetes version in JSON format
+if ! get_kube_version_json=$(kubectl version -o json) ||
+   [[ -z "${get_kube_version_json}" ]]; then
 	echo "could not get Kubernetes server version"
 	echo "hint: check if you have specified the right host or port"
 	exit 1
 fi
 
-KUBE_VERSION=$(echo "${get_kube_version}" | grep "^Server Version" | cut -d' ' -f3)
-KUBE_MAJOR=$(kube_version 1)
-KUBE_MINOR=$(kube_version 2)
+# Extracting the major and minor version directly from JSON
+KUBE_MAJOR=$(echo "${get_kube_version_json}" | grep '"major":' | head -1 | awk -F '"' '{print $4}')
+KUBE_MINOR=$(echo "${get_kube_version_json}" | grep '"minor":' | head -1 | awk -F '"' '{print $4}')
 
-# skip snapshot operation if kube version is less than 1.17.0
+
+# Skip snapshot operation if kube version is less than 1.17.0
 if [[ "${KUBE_MAJOR}" -lt 1 ]] || [[ "${KUBE_MAJOR}" -eq 1  &&  "${KUBE_MINOR}" -lt 17 ]]; then
 	echo "skipping: Kubernetes server version is < 1.17.0"
 	exit 1
 fi
 
+# Handle command-line arguments
 case "${1:-}" in
 install)
 	install_snapshot_controller "$2"
@@ -116,3 +120,4 @@ delete-crd)
 	echo "  $0 delete-crd" >&2
 	;;
 esac
+
